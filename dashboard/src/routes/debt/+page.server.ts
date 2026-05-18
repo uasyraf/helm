@@ -1,11 +1,11 @@
-import { activeSlug, db } from "$lib/server/db";
+import { activeSlug, repo } from "$lib/server/db";
 import { loadAllDebt, loadProject } from "$lib/server/queries";
 import type { PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async () => {
-  const handle = db();
-  const project = (await loadProject(handle, activeSlug()))!;
-  const items = await loadAllDebt(handle, project.id, 500);
+  const r = await repo();
+  const project = (await loadProject(r, activeSlug()))!;
+  const items = await loadAllDebt(r, project.id, 500);
   return {
     debt: items.map((d) => ({
       id: d.id,

@@ -1,68 +1,35 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import {
-  decision,
-  developer,
-  epic,
-  progressEvent,
-  project,
-  sprint,
-  story,
-  techDebt,
-} from "$helm/db/schema.js";
-import type { DashboardDb } from "./db.js";
+import type { HelmRepo } from "$helm/db/repo.js";
 
-export async function loadProject(db: DashboardDb, slug: string) {
-  const rows = await db.select().from(project).where(eq(project.slug, slug)).limit(1);
-  return rows[0] ?? null;
+export async function loadProject(repo: HelmRepo, slug: string) {
+  return repo.findProjectBySlug(slug);
 }
 
-export async function loadActiveSprint(db: DashboardDb, projectId: string) {
-  const rows = await db
-    .select()
-    .from(sprint)
-    .where(and(eq(sprint.projectId, projectId), eq(sprint.status, "active")))
-    .limit(1);
-  return rows[0] ?? null;
+export async function loadActiveSprint(repo: HelmRepo, projectId: string) {
+  return repo.findActiveSprint(projectId);
 }
 
-export async function loadAllSprints(db: DashboardDb, projectId: string) {
-  return db.select().from(sprint).where(eq(sprint.projectId, projectId)).orderBy(desc(sprint.startedAt));
+export async function loadAllSprints(repo: HelmRepo, projectId: string) {
+  return repo.findSprintsByProject(projectId);
 }
 
-export async function loadSprintById(db: DashboardDb, sprintId: string) {
-  const rows = await db.select().from(sprint).where(eq(sprint.id, sprintId)).limit(1);
-  return rows[0] ?? null;
+export async function loadSprintById(repo: HelmRepo, sprintId: string) {
+  return repo.findSprintById(sprintId);
 }
 
-export async function loadStoriesInSprint(db: DashboardDb, sprintId: string) {
-  return db.select().from(story).where(eq(story.sprintId, sprintId)).orderBy(story.priority);
+export async function loadStoriesInSprint(repo: HelmRepo, sprintId: string) {
+  return repo.findStoriesInSprint(sprintId);
 }
 
-export async function loadOpenDebt(db: DashboardDb, projectId: string, limit = 100) {
-  return db
-    .select()
-    .from(techDebt)
-    .where(and(eq(techDebt.projectId, projectId), isNull(techDebt.closedAt)))
-    .orderBy(sql`severity desc, opened_at desc`)
-    .limit(limit);
+export async function loadOpenDebt(repo: HelmRepo, projectId: string, limit = 100) {
+  return repo.findOpenDebtByProject(projectId, limit);
 }
 
-export async function loadAllDebt(db: DashboardDb, projectId: string, limit = 500) {
-  return db
-    .select()
-    .from(techDebt)
-    .where(eq(techDebt.projectId, projectId))
-    .orderBy(sql`closed_at is null desc, severity desc, opened_at desc`)
-    .limit(limit);
+export async function loadAllDebt(repo: HelmRepo, projectId: string, limit = 500) {
+  return repo.findAllDebtByProject(projectId, limit);
 }
 
-export async function loadRecentEvents(db: DashboardDb, projectId: string, limit = 30) {
-  return db
-    .select()
-    .from(progressEvent)
-    .where(eq(progressEvent.projectId, projectId))
-    .orderBy(desc(progressEvent.ts))
-    .limit(limit);
+export async function loadRecentEvents(repo: HelmRepo, projectId: string, limit = 30) {
+  return repo.findRecentEvents(projectId, limit);
 }
 
 export interface SprintMetric {
@@ -78,66 +45,48 @@ export interface SprintMetric {
   debtDelta: number;
 }
 
-export async function loadSprintMetrics(db: DashboardDb, projectId: string): Promise<SprintMetric[]> {
-  const sprints = await loadAllSprints(db, projectId);
+export async function loadSprintMetrics(repo: HelmRepo, projectId: string): Promise<SprintMetric[]> {
+  const sprints = await loadAllSprints(repo, projectId);
   const out: SprintMetric[] = [];
-  for (const s of sprints) {
-    out.push(await computeSprintMetric(db, s));
-  }
+  for (const s of sprints) out.push(await computeSprintMetric(repo, s));
   return out;
 }
 
-export async function computeSprintMetric(db: DashboardDb, s: { id: string; name: string; status: string; startedAt: string; endedAt: string | null }): Promise<SprintMetric> {
-  const total = await db
-    .select({ c: sql<number>`count(*)` })
-    .from(story)
-    .where(eq(story.sprintId, s.id));
-  const done = await db
-    .select({ c: sql<number>`count(*)` })
-    .from(story)
-    .where(and(eq(story.sprintId, s.id), eq(story.status, "done")));
-  const opened = await db
-    .select({ c: sql<number>`count(*)` })
-    .from(progressEvent)
-    .where(and(eq(progressEvent.sprintId, s.id), eq(progressEvent.kind, "debt.opened")));
-  const closed = await db
-    .select({ c: sql<number>`count(*)` })
-    .from(progressEvent)
-    .where(and(eq(progressEvent.sprintId, s.id), eq(progressEvent.kind, "debt.closed")));
-
-  const o = opened[0]?.c ?? 0;
-  const c = closed[0]?.c ?? 0;
+export async function computeSprintMetric(
+  repo: HelmRepo,
+  s: { id: string; name: string; status: string; startedAt: string; endedAt: string | null },
+): Promise<SprintMetric> {
+  const byStatus = await repo.countStoriesInSprintByStatus(s.id);
+  const storiesTotal = Object.values(byStatus).reduce((a, b) => a + b, 0);
+  const storiesDone = byStatus.done ?? 0;
+  const debtOpened = await repo.countEventsByKindInSprint(s.id, "debt.opened");
+  const debtClosed = await repo.countEventsByKindInSprint(s.id, "debt.closed");
   return {
     sprintId: s.id,
     name: s.name,
     status: s.status,
     startedAt: s.startedAt,
     endedAt: s.endedAt,
-    storiesTotal: total[0]?.c ?? 0,
-    storiesDone: done[0]?.c ?? 0,
-    debtOpened: o,
-    debtClosed: c,
-    debtDelta: o - c,
+    storiesTotal,
+    storiesDone,
+    debtOpened,
+    debtClosed,
+    debtDelta: debtOpened - debtClosed,
   };
 }
 
-export async function loadEventsForSprint(db: DashboardDb, sprintId: string, limit = 100) {
-  return db
-    .select()
-    .from(progressEvent)
-    .where(eq(progressEvent.sprintId, sprintId))
-    .orderBy(desc(progressEvent.ts))
-    .limit(limit);
+export async function loadEventsForSprint(repo: HelmRepo, sprintId: string, limit = 100) {
+  return repo.findEventsForSprint(sprintId, limit);
 }
 
-export async function loadEpics(db: DashboardDb, projectId: string) {
-  return db.select().from(epic).where(eq(epic.projectId, projectId)).orderBy(epic.priority);
+export async function loadEpics(repo: HelmRepo, projectId: string) {
+  return repo.findEpicsByProject(projectId);
 }
 
-export async function loadDevelopers(db: DashboardDb, projectId: string) {
-  return db.select().from(developer).where(eq(developer.projectId, projectId)).orderBy(desc(developer.lastSeenAt));
+export async function loadDevelopers(repo: HelmRepo, projectId: string) {
+  return repo.findDevelopersByProject(projectId);
 }
 
-export async function loadDecisions(db: DashboardDb, projectId: string, limit = 50) {
-  return db.select().from(decision).where(eq(decision.projectId, projectId)).orderBy(desc(decision.decidedAt)).limit(limit);
+export async function loadDecisions(repo: HelmRepo, projectId: string, limit = 50) {
+  return repo.findDecisionsByProject(projectId, limit);
 }

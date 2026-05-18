@@ -1,7 +1,7 @@
 import { createServer, type Server, type Socket } from "node:net";
 import { existsSync, mkdirSync, unlinkSync, writeFileSync, appendFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { openProjectDb } from "../db/open-project.js";
+import { openProjectRepo } from "../db/open-repo.js";
 import { bootstrapSession } from "../project/bootstrap.js";
 import { helmHome } from "../util/paths.js";
 import { scanPayload, type HookPayload } from "./scanner.js";
@@ -136,12 +136,12 @@ async function processLine(line: string, socket: Socket): Promise<void> {
 }
 
 async function processScan(req: ScanRequest): Promise<{ inserted: number; skipped: number; filePath: string | null }> {
-  const { handle, slug } = await openProjectDb(req.cwd);
+  const { handle, slug } = await openProjectRepo(req.cwd);
   try {
-    const session = await bootstrapSession(handle.db, req.cwd);
+    const session = await bootstrapSession(handle.repo, req.cwd);
     const scan = scanPayload(req.payload);
     const summary = await ingestScan(scan, {
-      db: handle.db,
+      repo: handle.repo,
       projectId: session.project.id,
       developerId: session.developer.id,
       sprintId: session.activeSprint.id,
@@ -152,6 +152,6 @@ async function processScan(req: ScanRequest): Promise<{ inserted: number; skippe
     if (handle.sync) await handle.sync();
     return summary;
   } finally {
-    handle.client.close();
+    await handle.close();
   }
 }

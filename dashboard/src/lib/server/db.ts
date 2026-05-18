@@ -1,12 +1,14 @@
 import { createClient } from "@libsql/client";
-import { drizzle, type LibSQLDatabase } from "drizzle-orm/libsql";
+import { drizzle as drizzleLibsql } from "drizzle-orm/libsql";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { schema } from "$helm/db/schema.js";
+import { schema as pgSchema } from "$helm/db/schema-pg.js";
+import { makeSqliteRepo } from "$helm/db/repo-sqlite.js";
+import { makePgRepo } from "$helm/db/repo-pg.js";
+import type { HelmRepo } from "$helm/db/repo.js";
 
-export type DashboardDb = LibSQLDatabase<typeof schema>;
-
-let cached: DashboardDb | null = null;
+let cached: HelmRepo | null = null;
 
 function helmHome(): string {
   return process.env.HELM_HOME ?? join(homedir(), ".helm");
@@ -20,8 +22,21 @@ export function activeSlug(): string {
   return slug;
 }
 
-export function db(): DashboardDb {
+export async function repo(): Promise<HelmRepo> {
   if (cached) return cached;
+  const dbUrl = process.env.HELM_DB_URL ?? "";
+
+  if (dbUrl.startsWith("postgres://") || dbUrl.startsWith("postgresql://")) {
+    const [{ Pool }, { drizzle }] = await Promise.all([
+      import("pg"),
+      import("drizzle-orm/node-postgres"),
+    ]);
+    const pool = new Pool({ connectionString: dbUrl });
+    const pg = drizzle(pool, { schema: pgSchema });
+    cached = makePgRepo(pg);
+    return cached;
+  }
+
   const slug = activeSlug();
   const path = join(helmHome(), `${slug}.db`);
   const syncUrl = process.env.HELM_SYNC_URL;
@@ -30,6 +45,7 @@ export function db(): DashboardDb {
   const client = syncUrl
     ? createClient({ url: `file:${path}`, syncUrl, authToken: syncToken, syncInterval: syncIntervalSec })
     : createClient({ url: `file:${path}` });
-  cached = drizzle(client, { schema });
+  const drizzled = drizzleLibsql(client, { schema });
+  cached = makeSqliteRepo(drizzled);
   return cached;
 }

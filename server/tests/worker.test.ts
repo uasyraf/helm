@@ -10,6 +10,7 @@ import { detectLargeFile } from "../src/worker/markers/file-size.js";
 import { scanPayload } from "../src/worker/scanner.js";
 import { ingestScan } from "../src/worker/ingest.js";
 import { openDb, type DbHandle } from "../src/db/client.js";
+import { makeSqliteRepo } from "../src/db/repo-sqlite.js";
 import { bootstrapSession, type SessionContext } from "../src/project/bootstrap.js";
 import { techDebt, progressEvent } from "../src/db/schema.js";
 import { eq, and } from "drizzle-orm";
@@ -98,6 +99,7 @@ describe("scan + ingest round-trip", () => {
   let cwd: string;
   let dbPath: string;
   let handle: DbHandle;
+  let repo: ReturnType<typeof makeSqliteRepo>;
   let session: SessionContext;
 
   beforeEach(async () => {
@@ -107,7 +109,8 @@ describe("scan + ingest round-trip", () => {
     execFileSync("git", ["config", "user.name", "Worker Test"], { cwd });
     dbPath = join(cwd, "test.db");
     handle = await openDb(dbPath);
-    session = await bootstrapSession(handle.db, cwd);
+    repo = makeSqliteRepo(handle.db);
+    session = await bootstrapSession(repo, cwd);
   });
 
   it("Write payload with DEBT marker creates a debt row + progress event", async () => {
@@ -118,7 +121,7 @@ describe("scan + ingest round-trip", () => {
     expect(scan.markers).toHaveLength(1);
 
     const summary = await ingestScan(scan, {
-      db: handle.db,
+      repo,
       projectId: session.project.id,
       developerId: session.developer.id,
       sprintId: session.activeSprint.id,
@@ -144,7 +147,7 @@ describe("scan + ingest round-trip", () => {
     const scan = scanPayload({ tool_name: "Write", tool_input: { file_path: filePath, content } });
 
     const ctx = {
-      db: handle.db,
+      repo,
       projectId: session.project.id,
       developerId: session.developer.id,
       sprintId: session.activeSprint.id,
@@ -179,7 +182,7 @@ describe("scan + ingest round-trip", () => {
     expect(scan.anyTypes).toHaveLength(1);
 
     const summary = await ingestScan(scan, {
-      db: handle.db,
+      repo,
       projectId: session.project.id,
       developerId: session.developer.id,
       sprintId: session.activeSprint.id,

@@ -1,12 +1,10 @@
-import { and, eq, isNull } from "drizzle-orm";
-import type { Db } from "../db/client.js";
-import { techDebt } from "../db/schema.js";
+import type { HelmRepo } from "../db/repo.js";
 import { newId, now } from "../util/ids.js";
 import { emitEvent } from "../events/emit.js";
 import type { ScanResult } from "./scanner.js";
 
 export interface IngestContext {
-  db: Db;
+  repo: HelmRepo;
   projectId: string;
   developerId: string | null;
   sprintId: string | null;
@@ -24,8 +22,7 @@ export async function ingestScan(scan: ScanResult, ctx: IngestContext): Promise<
 
   for (const marker of scan.markers) {
     const location = scan.filePath ? `${scan.filePath}:${marker.line}` : `marker:${marker.line}`;
-    const exists = await debtExists(ctx, location);
-    if (exists) {
+    if (await debtExists(ctx, location)) {
       skipped++;
       continue;
     }
@@ -41,8 +38,7 @@ export async function ingestScan(scan: ScanResult, ctx: IngestContext): Promise<
 
   if (scan.largeFile) {
     const location = scan.largeFile.filePath;
-    const exists = await debtExists(ctx, location);
-    if (!exists) {
+    if (!(await debtExists(ctx, location))) {
       await insertDebt(ctx, {
         title: `Large file (${scan.largeFile.lineCount} lines)`,
         description: `${scan.largeFile.filePath} crossed the 500-line threshold (${scan.largeFile.lineCount} lines). Consider splitting.`,
@@ -58,8 +54,7 @@ export async function ingestScan(scan: ScanResult, ctx: IngestContext): Promise<
 
   for (const signal of scan.anyTypes) {
     const location = scan.filePath ? `${scan.filePath}:${signal.line}` : `any:${signal.line}`;
-    const exists = await debtExists(ctx, location);
-    if (exists) {
+    if (await debtExists(ctx, location)) {
       skipped++;
       continue;
     }
@@ -77,12 +72,8 @@ export async function ingestScan(scan: ScanResult, ctx: IngestContext): Promise<
 }
 
 async function debtExists(ctx: IngestContext, location: string): Promise<boolean> {
-  const rows = await ctx.db
-    .select({ id: techDebt.id })
-    .from(techDebt)
-    .where(and(eq(techDebt.projectId, ctx.projectId), eq(techDebt.location, location), isNull(techDebt.closedAt)))
-    .limit(1);
-  return rows.length > 0;
+  const existing = await ctx.repo.findOpenDebtAtLocation(ctx.projectId, location);
+  return existing !== null;
 }
 
 interface InsertArgs {
@@ -95,7 +86,7 @@ interface InsertArgs {
 
 async function insertDebt(ctx: IngestContext, args: InsertArgs): Promise<void> {
   const id = newId();
-  await ctx.db.insert(techDebt).values({
+  await ctx.repo.insertDebt({
     id,
     projectId: ctx.projectId,
     title: args.title,
@@ -108,7 +99,7 @@ async function insertDebt(ctx: IngestContext, args: InsertArgs): Promise<void> {
     closedAt: null,
     linkedStoryId: null,
   });
-  await emitEvent(ctx.db, {
+  await emitEvent(ctx.repo, {
     projectId: ctx.projectId,
     developerId: ctx.developerId,
     sprintId: ctx.sprintId,

@@ -1,51 +1,29 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
-import type { Db } from "./db/client.js";
-import { openProjectDb } from "./db/open-project.js";
+import { openProjectRepo } from "./db/open-repo.js";
 import { bootstrapSession, type SessionContext } from "./project/bootstrap.js";
-import { story, techDebt, progressEvent } from "./db/schema.js";
+import type { HelmRepo } from "./db/repo.js";
 
 export async function renderBanner(cwd: string = process.cwd()): Promise<string> {
-  const { handle } = await openProjectDb(cwd);
+  const { handle } = await openProjectRepo(cwd);
   try {
-    const session = await bootstrapSession(handle.db, cwd);
-    return await formatBanner(handle.db, session);
+    const session = await bootstrapSession(handle.repo, cwd);
+    return await formatBanner(handle.repo, session);
   } finally {
-    handle.client.close();
+    await handle.close();
   }
 }
 
-async function formatBanner(db: Db, session: SessionContext): Promise<string> {
+async function formatBanner(repo: HelmRepo, session: SessionContext): Promise<string> {
   const sprintRow = session.activeSprint;
   const lengthDays = session.project.sprintLengthDays;
   const day = sprintDayNumber(sprintRow.startedAt);
 
-  const inSprint = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(story)
-    .where(eq(story.sprintId, sprintRow.id));
-  const doneInSprint = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(story)
-    .where(and(eq(story.sprintId, sprintRow.id), eq(story.status, "done")));
-
-  const openDebt = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(techDebt)
-    .where(and(eq(techDebt.projectId, session.project.id), isNull(techDebt.closedAt)));
-
-  const opened = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(progressEvent)
-    .where(and(eq(progressEvent.sprintId, sprintRow.id), eq(progressEvent.kind, "debt.opened")));
-  const closed = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(progressEvent)
-    .where(and(eq(progressEvent.sprintId, sprintRow.id), eq(progressEvent.kind, "debt.closed")));
-
-  const total = inSprint[0]?.count ?? 0;
-  const done = doneInSprint[0]?.count ?? 0;
-  const debt = openDebt[0]?.count ?? 0;
-  const delta = (opened[0]?.count ?? 0) - (closed[0]?.count ?? 0);
+  const byStatus = await repo.countStoriesInSprintByStatus(sprintRow.id);
+  const total = Object.values(byStatus).reduce((a, b) => a + b, 0);
+  const done = byStatus.done ?? 0;
+  const debt = await repo.countOpenDebtByProject(session.project.id);
+  const opened = await repo.countEventsByKindInSprint(sprintRow.id, "debt.opened");
+  const closed = await repo.countEventsByKindInSprint(sprintRow.id, "debt.closed");
+  const delta = opened - closed;
   const sign = delta > 0 ? `+${delta}` : `${delta}`;
 
   return `[helm] ${sprintRow.name} (d${day}/${lengthDays}) | stories: ${done}/${total} done | debt: ${debt} (Δ${sign})`;

@@ -1,10 +1,9 @@
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { ToolRegistrar } from "./types.js";
 import { jsonResult } from "./types.js";
-import { task } from "../db/schema.js";
 import { newId, now } from "../util/ids.js";
 import { emitEvent } from "../events/emit.js";
+import type { TaskUpdate } from "../db/repo.js";
 
 const TASK_STATUS = z.enum(["todo", "doing", "done"]);
 
@@ -22,9 +21,9 @@ export const registerTaskTools: ToolRegistrar = (server, ctx) => {
       },
     },
     async (args) => {
-      const { db, session } = ctx;
+      const { repo, session } = ctx;
       const id = newId();
-      await db.insert(task).values({
+      await repo.insertTask({
         id,
         storyId: args.storyId,
         assigneeId: args.assigneeId ?? null,
@@ -33,7 +32,7 @@ export const registerTaskTools: ToolRegistrar = (server, ctx) => {
         blockedBy: args.blockedBy ?? null,
         createdAt: now(),
       });
-      await emitEvent(db, {
+      await emitEvent(repo, {
         projectId: session.project.id,
         developerId: session.developer.id,
         sprintId: session.activeSprint.id,
@@ -59,16 +58,16 @@ export const registerTaskTools: ToolRegistrar = (server, ctx) => {
       },
     },
     async (args) => {
-      const { db, session } = ctx;
-      const updates: Record<string, unknown> = {};
+      const { repo, session } = ctx;
+      const updates: TaskUpdate = {};
       if (args.title !== undefined) updates.title = args.title;
       if (args.status !== undefined) updates.status = args.status;
       if (args.assigneeId !== undefined) updates.assigneeId = args.assigneeId;
       if (args.blockedBy !== undefined) updates.blockedBy = args.blockedBy;
       if (Object.keys(updates).length === 0) return jsonResult({ id: args.id, changed: false });
 
-      await db.update(task).set(updates).where(eq(task.id, args.id));
-      await emitEvent(db, {
+      await repo.updateTask(args.id, updates);
+      await emitEvent(repo, {
         projectId: session.project.id,
         developerId: session.developer.id,
         sprintId: session.activeSprint.id,
@@ -88,9 +87,9 @@ export const registerTaskTools: ToolRegistrar = (server, ctx) => {
       inputSchema: { id: z.string() },
     },
     async (args) => {
-      const { db, session } = ctx;
-      await db.update(task).set({ status: "done" }).where(eq(task.id, args.id));
-      await emitEvent(db, {
+      const { repo, session } = ctx;
+      await repo.updateTask(args.id, { status: "done" });
+      await emitEvent(repo, {
         projectId: session.project.id,
         developerId: session.developer.id,
         sprintId: session.activeSprint.id,

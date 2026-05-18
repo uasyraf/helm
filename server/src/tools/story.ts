@@ -1,10 +1,9 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ToolRegistrar } from "./types.js";
 import { jsonResult } from "./types.js";
-import { story } from "../db/schema.js";
 import { newId, now } from "../util/ids.js";
 import { emitEvent } from "../events/emit.js";
+import type { StoryUpdate } from "../db/repo.js";
 
 const STORY_STATUS = z.enum(["backlog", "todo", "doing", "review", "done", "dropped"]);
 const SIZE = z.enum(["XS", "S", "M", "L", "XL", "XXL"]);
@@ -27,10 +26,10 @@ export const registerStoryTools: ToolRegistrar = (server, ctx) => {
       },
     },
     async (args) => {
-      const { db, session } = ctx;
+      const { repo, session } = ctx;
       const id = newId();
       const initialStatus = args.sprintId ? "todo" : "backlog";
-      await db.insert(story).values({
+      await repo.insertStory({
         id,
         epicId: args.epicId ?? null,
         sprintId: args.sprintId ?? null,
@@ -45,7 +44,7 @@ export const registerStoryTools: ToolRegistrar = (server, ctx) => {
         completedAt: null,
         createdAt: now(),
       });
-      await emitEvent(db, {
+      await emitEvent(repo, {
         projectId: session.project.id,
         developerId: session.developer.id,
         sprintId: args.sprintId ?? session.activeSprint.id,
@@ -75,18 +74,21 @@ export const registerStoryTools: ToolRegistrar = (server, ctx) => {
       },
     },
     async (args) => {
-      const { db, session } = ctx;
-      const updates: Record<string, unknown> = {};
-      const knownKeys = ["title", "description", "acceptance", "status", "size", "priority", "assigneeId", "epicId"] as const;
-      for (const k of knownKeys) {
-        const v = (args as Record<string, unknown>)[k];
-        if (v !== undefined) updates[k] = v;
-      }
+      const { repo, session } = ctx;
+      const updates: StoryUpdate = {};
+      if (args.title !== undefined) updates.title = args.title;
+      if (args.description !== undefined) updates.description = args.description;
+      if (args.acceptance !== undefined) updates.acceptance = args.acceptance;
+      if (args.status !== undefined) updates.status = args.status;
+      if (args.size !== undefined) updates.size = args.size;
+      if (args.priority !== undefined) updates.priority = args.priority;
+      if (args.assigneeId !== undefined) updates.assigneeId = args.assigneeId;
+      if (args.epicId !== undefined) updates.epicId = args.epicId;
       if (args.status === "doing") updates.startedAt = now();
       if (Object.keys(updates).length === 0) return jsonResult({ id: args.id, changed: false });
 
-      await db.update(story).set(updates).where(eq(story.id, args.id));
-      await emitEvent(db, {
+      await repo.updateStory(args.id, updates);
+      await emitEvent(repo, {
         projectId: session.project.id,
         developerId: session.developer.id,
         sprintId: session.activeSprint.id,
@@ -109,10 +111,10 @@ export const registerStoryTools: ToolRegistrar = (server, ctx) => {
       },
     },
     async (args) => {
-      const { db, session } = ctx;
+      const { repo, session } = ctx;
       const newStatus = args.sprintId ? "todo" : "backlog";
-      await db.update(story).set({ sprintId: args.sprintId, status: newStatus }).where(eq(story.id, args.id));
-      await emitEvent(db, {
+      await repo.updateStory(args.id, { sprintId: args.sprintId, status: newStatus });
+      await emitEvent(repo, {
         projectId: session.project.id,
         developerId: session.developer.id,
         sprintId: args.sprintId ?? session.activeSprint.id,
@@ -135,10 +137,10 @@ export const registerStoryTools: ToolRegistrar = (server, ctx) => {
       },
     },
     async (args) => {
-      const { db, session } = ctx;
+      const { repo, session } = ctx;
       const status = args.dropped ? "dropped" : "done";
-      await db.update(story).set({ status, completedAt: now() }).where(eq(story.id, args.id));
-      await emitEvent(db, {
+      await repo.updateStory(args.id, { status, completedAt: now() });
+      await emitEvent(repo, {
         projectId: session.project.id,
         developerId: session.developer.id,
         sprintId: session.activeSprint.id,
@@ -160,14 +162,8 @@ export const registerStoryTools: ToolRegistrar = (server, ctx) => {
       },
     },
     async (args) => {
-      const { db } = ctx;
-      const limit = args.limit ?? 50;
-      const rows = await db
-        .select()
-        .from(story)
-        .where(and(isNull(story.sprintId), eq(story.status, "backlog")))
-        .orderBy(sql`priority asc, created_at asc`)
-        .limit(limit);
+      const { repo, session } = ctx;
+      const rows = await repo.findBacklogStories(session.project.id, args.limit ?? 50);
       return jsonResult({
         count: rows.length,
         stories: rows.map((r) => ({ id: r.id, title: r.title, priority: r.priority, size: r.size })),

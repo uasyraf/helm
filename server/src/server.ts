@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { bootstrapSession } from "./project/bootstrap.js";
-import { openProjectDb } from "./db/open-project.js";
+import { openProjectRepo } from "./db/open-repo.js";
 import { registerAllTools } from "./tools/index.js";
 import type { ToolContext } from "./tools/types.js";
 
@@ -11,22 +11,22 @@ export interface ServerHandle {
 }
 
 export async function buildServer(cwd: string = process.cwd()): Promise<ServerHandle> {
-  const { handle } = await openProjectDb(cwd);
-  const session = await bootstrapSession(handle.db, cwd);
+  const { handle } = await openProjectRepo(cwd);
+  const session = await bootstrapSession(handle.repo, cwd);
 
   const server = new McpServer({
     name: "helm",
     version: "0.1.0",
   });
 
-  const ctx: ToolContext = { db: handle.db, session, cwd };
+  const ctx: ToolContext = { repo: handle.repo, session, cwd };
   registerAllTools(server, ctx);
 
   return {
     server,
     ctx,
     close: async () => {
-      handle.client.close();
+      await handle.close();
     },
   };
 }

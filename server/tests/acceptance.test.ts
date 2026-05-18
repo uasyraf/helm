@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { openDb, type DbHandle } from "../src/db/client.js";
+import { makeSqliteRepo } from "../src/db/repo-sqlite.js";
+import type { HelmRepo } from "../src/db/repo.js";
 import { bootstrapSession, type SessionContext } from "../src/project/bootstrap.js";
 import { detectProject } from "../src/project/detect.js";
 import { resolveIdentity } from "../src/project/identity.js";
@@ -18,6 +20,7 @@ interface Fixture {
   cwd: string;
   dbPath: string;
   handle: DbHandle;
+  repo: HelmRepo;
   session: SessionContext;
 }
 
@@ -32,8 +35,9 @@ async function setupFixture(opts: { withGit?: boolean } = {}): Promise<Fixture> 
   }
   const dbPath = join(root, "test.db");
   const handle = await openDb(dbPath);
-  const session = await bootstrapSession(handle.db, root);
-  return { cwd: root, dbPath, handle, session };
+  const repo = makeSqliteRepo(handle.db);
+  const session = await bootstrapSession(repo, root);
+  return { cwd: root, dbPath, handle, repo, session };
 }
 
 beforeAll(() => {
@@ -65,7 +69,7 @@ describe("bootstrap", () => {
 
   it("is idempotent across reopens", async () => {
     const f = fixture!;
-    const second = await bootstrapSession(f.handle.db, f.cwd);
+    const second = await bootstrapSession(f.repo, f.cwd);
     expect(second.project.id).toBe(f.session.project.id);
     expect(second.developer.id).toBe(f.session.developer.id);
     expect(second.activeSprint.id).toBe(f.session.activeSprint.id);
@@ -125,13 +129,14 @@ describe("identity", () => {
 describe("story lifecycle", () => {
   it("open → move → close produces correct progress events and sprint counts", async () => {
     const f = fixture!;
+    const { repo } = f;
     const { db } = f.handle;
     const projectId = f.session.project.id;
     const devId = f.session.developer.id;
     const sprintId = f.session.activeSprint.id;
 
     const storyId = newId();
-    await db.insert(story).values({
+    await repo.insertStory({
       id: storyId,
       epicId: null,
       sprintId: null,
@@ -146,13 +151,13 @@ describe("story lifecycle", () => {
       completedAt: null,
       createdAt: now(),
     });
-    await emitEvent(db, { projectId, developerId: devId, sprintId, kind: "story.opened", refId: storyId, summary: "open" });
+    await emitEvent(repo, { projectId, developerId: devId, sprintId, kind: "story.opened", refId: storyId, summary: "open" });
 
-    await db.update(story).set({ sprintId, status: "todo" }).where(eq(story.id, storyId));
-    await emitEvent(db, { projectId, developerId: devId, sprintId, kind: "story.moved", refId: storyId, summary: "moved" });
+    await repo.updateStory(storyId, { sprintId, status: "todo" });
+    await emitEvent(repo, { projectId, developerId: devId, sprintId, kind: "story.moved", refId: storyId, summary: "moved" });
 
-    await db.update(story).set({ status: "done", completedAt: now() }).where(eq(story.id, storyId));
-    await emitEvent(db, { projectId, developerId: devId, sprintId, kind: "story.closed", refId: storyId, summary: "closed" });
+    await repo.updateStory(storyId, { status: "done", completedAt: now() });
+    await emitEvent(repo, { projectId, developerId: devId, sprintId, kind: "story.closed", refId: storyId, summary: "closed" });
 
     const events = await db
       .select()
@@ -170,9 +175,8 @@ describe("story lifecycle", () => {
 describe("debt round-trip", () => {
   it("log_debt is visible in list_debt", async () => {
     const f = fixture!;
-    const { db } = f.handle;
     const debtId = newId();
-    await db.insert(techDebt).values({
+    await f.repo.insertDebt({
       id: debtId,
       projectId: f.session.project.id,
       title: "// FIXME: refactor billing",
@@ -185,7 +189,7 @@ describe("debt round-trip", () => {
       closedAt: null,
       linkedStoryId: null,
     });
-    await emitEvent(db, {
+    await emitEvent(f.repo, {
       projectId: f.session.project.id,
       developerId: f.session.developer.id,
       sprintId: f.session.activeSprint.id,
@@ -194,7 +198,7 @@ describe("debt round-trip", () => {
       summary: "opened",
     });
 
-    const rows = await db.select().from(techDebt).where(eq(techDebt.projectId, f.session.project.id));
+    const rows = await f.repo.findAllDebtByProject(f.session.project.id, 100);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.title).toContain("billing");
     expect(rows[0]?.severity).toBe("high");
@@ -208,7 +212,8 @@ describe("banner", () => {
     f.handle.client.close();
     const line = await renderBanner(f.cwd);
     expect(line).toMatch(/^\[helm\] sprint-\d+ \(d\d+\/\d+\) \| stories: \d+\/\d+ done \| debt: \d+ \(Δ[+-]?\d+\)$/);
-    fixture = { ...f, handle: await openDb(f.dbPath) };
+    const reopen = await openDb(f.dbPath);
+    fixture = { ...f, handle: reopen, repo: makeSqliteRepo(reopen.db) };
   });
 });
 
@@ -267,6 +272,7 @@ describe("server build", () => {
     const handle = await buildServer(f.cwd);
     expect(handle.server).toBeTruthy();
     await handle.close();
-    fixture = { ...f, handle: await openDb(f.dbPath) };
+    const reopen = await openDb(f.dbPath);
+    fixture = { ...f, handle: reopen, repo: makeSqliteRepo(reopen.db) };
   });
 });

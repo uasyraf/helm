@@ -1,4 +1,4 @@
-import { activeSlug, db } from "$lib/server/db";
+import { activeSlug, repo } from "$lib/server/db";
 import {
   computeSprintMetric,
   loadActiveSprint,
@@ -9,12 +9,12 @@ import {
 import type { PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async () => {
-  const handle = db();
-  const project = (await loadProject(handle, activeSlug()))!;
-  const activeSprint = await loadActiveSprint(handle, project.id);
-  const metric = activeSprint ? await computeSprintMetric(handle, activeSprint) : null;
-  const topDebt = await loadOpenDebt(handle, project.id, 5);
-  const events = await loadRecentEvents(handle, project.id, 15);
+  const r = await repo();
+  const project = (await loadProject(r, activeSlug()))!;
+  const activeSprint = await loadActiveSprint(r, project.id);
+  const metric = activeSprint ? await computeSprintMetric(r, activeSprint) : null;
+  const topDebt = await loadOpenDebt(r, project.id, 5);
+  const events = await loadRecentEvents(r, project.id, 15);
 
   return {
     project: { id: project.id, name: project.name, slug: project.slug, sprintLengthDays: project.sprintLengthDays },

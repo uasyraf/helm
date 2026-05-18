@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { detectProject } from "./project/detect.js";
-import { openProjectDb } from "./db/open-project.js";
+import { openProjectRepo } from "./db/open-repo.js";
 import { bootstrapSession } from "./project/bootstrap.js";
 
 function packageRoot(): string {
@@ -25,9 +25,9 @@ export interface DashboardOptions {
 export async function runDashboard(opts: DashboardOptions): Promise<number> {
   const cwd = opts.cwd ?? process.cwd();
   const detected = detectProject(cwd);
-  const { handle } = await openProjectDb(cwd);
-  await bootstrapSession(handle.db, cwd);
-  handle.client.close();
+  const { handle } = await openProjectRepo(cwd);
+  await bootstrapSession(handle.repo, cwd);
+  await handle.close();
 
   const dashboardDir = join(packageRoot(), "dashboard");
   if (!existsSync(dashboardDir)) {

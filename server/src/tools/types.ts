@@ -1,9 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Db } from "../db/client.js";
+import type { HelmRepo } from "../db/repo.js";
 import type { SessionContext } from "../project/bootstrap.js";
 
 export interface ToolContext {
-  db: Db;
+  repo: HelmRepo;
   session: SessionContext;
   cwd: string;
 }

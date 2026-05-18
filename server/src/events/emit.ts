@@ -1,6 +1,4 @@
-import { eq } from "drizzle-orm";
-import type { Db } from "../db/client.js";
-import { progressEvent } from "../db/schema.js";
+import type { HelmRepo } from "../db/repo.js";
 import { newId, now } from "../util/ids.js";
 
 export type EventKind =
@@ -32,8 +30,8 @@ export interface EmitArgs {
   summary: string;
 }
 
-export async function emitEvent(db: Db, args: EmitArgs): Promise<void> {
-  await db.insert(progressEvent).values({
+export async function emitEvent(repo: HelmRepo, args: EmitArgs): Promise<void> {
+  await repo.emitEvent({
     id: newId(),
     projectId: args.projectId,
     developerId: args.developerId,
@@ -45,11 +43,6 @@ export async function emitEvent(db: Db, args: EmitArgs): Promise<void> {
   });
 }
 
-export async function recentEvents(db: Db, projectId: string, limit = 50) {
-  return db
-    .select()
-    .from(progressEvent)
-    .where(eq(progressEvent.projectId, projectId))
-    .orderBy(progressEvent.ts)
-    .limit(limit);
+export async function recentEvents(repo: HelmRepo, projectId: string, limit = 50) {
+  return repo.findRecentEvents(projectId, limit);
 }

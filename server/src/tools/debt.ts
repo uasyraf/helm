@@ -1,8 +1,6 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ToolRegistrar } from "./types.js";
 import { jsonResult } from "./types.js";
-import { techDebt } from "../db/schema.js";
 import { newId, now } from "../util/ids.js";
 import { emitEvent } from "../events/emit.js";
 
@@ -24,9 +22,9 @@ export const registerDebtTools: ToolRegistrar = (server, ctx) => {
       },
     },
     async (args) => {
-      const { db, session } = ctx;
+      const { repo, session } = ctx;
       const id = newId();
-      await db.insert(techDebt).values({
+      await repo.insertDebt({
         id,
         projectId: session.project.id,
         title: args.title,
@@ -39,7 +37,7 @@ export const registerDebtTools: ToolRegistrar = (server, ctx) => {
         closedAt: null,
         linkedStoryId: args.linkedStoryId ?? null,
       });
-      await emitEvent(db, {
+      await emitEvent(repo, {
         projectId: session.project.id,
         developerId: session.developer.id,
         sprintId: session.activeSprint.id,
@@ -59,9 +57,9 @@ export const registerDebtTools: ToolRegistrar = (server, ctx) => {
       inputSchema: { id: z.string() },
     },
     async (args) => {
-      const { db, session } = ctx;
-      await db.update(techDebt).set({ closedAt: now() }).where(eq(techDebt.id, args.id));
-      await emitEvent(db, {
+      const { repo, session } = ctx;
+      await repo.closeDebt(args.id, now());
+      await emitEvent(repo, {
         projectId: session.project.id,
         developerId: session.developer.id,
         sprintId: session.activeSprint.id,
@@ -84,12 +82,11 @@ export const registerDebtTools: ToolRegistrar = (server, ctx) => {
       },
     },
     async (args) => {
-      const { db, session } = ctx;
+      const { repo, session } = ctx;
       const limit = args.limit ?? 100;
-      const filter = args.includeClosed
-        ? eq(techDebt.projectId, session.project.id)
-        : and(eq(techDebt.projectId, session.project.id), isNull(techDebt.closedAt));
-      const rows = await db.select().from(techDebt).where(filter).orderBy(sql`severity desc, opened_at desc`).limit(limit);
+      const rows = args.includeClosed
+        ? await repo.findAllDebtByProject(session.project.id, limit)
+        : await repo.findOpenDebtByProject(session.project.id, limit);
       return jsonResult({
         count: rows.length,
         items: rows.map((r) => ({

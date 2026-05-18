@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Phases 0 through 3 shipped 2026-05-18. The codebase has: 22-tool MCP server with HTTP transport (bearer auth) and Turso embedded-replica sync; PostToolUse debt scanner sidecar; SvelteKit dashboard with home / debt / sprints / sprint-detail / decisions views; 7 slash command skills + Nelson integration addendum; statusline. 40 unit tests passing (41 with `HELM_INTEGRATION=1` against a local sqld). Multi-dev sync live-verified at 248ms (PRD gate: 10s). BYOS Postgres data layer ready (pg-core schema, pglite-tested); tool-surface portability tracked as the one open story.
+Phases 0 through 3 shipped 2026-05-18/19. The codebase has: 22-tool MCP server with HTTP transport (bearer auth), Turso embedded-replica sync, **and BYOS Postgres** via a Repository pattern (`HelmRepo` interface with `SqliteHelmRepo` + `PgHelmRepo` implementations); PostToolUse debt scanner sidecar; SvelteKit dashboard (home / debt / sprints / sprint-detail / decisions); 7 slash command skills + Nelson integration addendum; statusline. 40 unit tests passing (41 with `HELM_INTEGRATION=1` against a local sqld; verified by HELM_DB_URL=memory:pglite end-to-end). Multi-dev sync live-verified at 248ms (PRD gate: 10s).
 
 The product is **self-hosted on its own data** — open `helm dashboard` and the killer metric is live. `npm publish --dry-run` produces a clean 457 KB tarball; ready to publish when the user is.
 

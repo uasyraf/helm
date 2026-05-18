@@ -17,9 +17,9 @@ export const registerNelsonTools: ToolRegistrar = (server, ctx) => {
       },
     },
     async (args) => {
-      const { db, session } = ctx;
+      const { repo, session } = ctx;
       const sprintId = args.sprintId ?? session.activeSprint.id;
-      await emitEvent(db, {
+      await emitEvent(repo, {
         projectId: session.project.id,
         developerId: session.developer.id,
         sprintId,

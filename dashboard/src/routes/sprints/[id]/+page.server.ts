@@ -1,5 +1,5 @@
 import { error } from "@sveltejs/kit";
-import { activeSlug, db } from "$lib/server/db";
+import { activeSlug, repo } from "$lib/server/db";
 import {
   computeSprintMetric,
   loadEventsForSprint,
@@ -10,13 +10,13 @@ import {
 import type { PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ params }) => {
-  const handle = db();
-  await loadProject(handle, activeSlug());
-  const sprint = await loadSprintById(handle, params.id);
+  const r = await repo();
+  await loadProject(r, activeSlug());
+  const sprint = await loadSprintById(r, params.id);
   if (!sprint) throw error(404, `Sprint ${params.id} not found`);
-  const metric = await computeSprintMetric(handle, sprint);
-  const stories = await loadStoriesInSprint(handle, sprint.id);
-  const events = await loadEventsForSprint(handle, sprint.id, 100);
+  const metric = await computeSprintMetric(r, sprint);
+  const stories = await loadStoriesInSprint(r, sprint.id);
+  const events = await loadEventsForSprint(r, sprint.id, 100);
 
   return {
     sprint: {

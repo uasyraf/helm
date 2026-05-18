@@ -1,7 +1,6 @@
 import { z } from "zod";
 import type { ToolRegistrar } from "./types.js";
 import { jsonResult } from "./types.js";
-import { decision } from "../db/schema.js";
 import { newId, now } from "../util/ids.js";
 import { emitEvent } from "../events/emit.js";
 
@@ -21,9 +20,9 @@ export const registerDecisionTools: ToolRegistrar = (server, ctx) => {
       },
     },
     async (args) => {
-      const { db, session } = ctx;
+      const { repo, session } = ctx;
       const id = newId();
-      await db.insert(decision).values({
+      await repo.insertDecision({
         id,
         projectId: session.project.id,
         title: args.title,
@@ -32,7 +31,7 @@ export const registerDecisionTools: ToolRegistrar = (server, ctx) => {
         status: args.status ?? "accepted",
         decidedAt: now(),
       });
-      await emitEvent(db, {
+      await emitEvent(repo, {
         projectId: session.project.id,
         developerId: session.developer.id,
         sprintId: session.activeSprint.id,

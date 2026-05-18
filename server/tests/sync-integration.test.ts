@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { openDb, type DbHandle } from "../src/db/client.js";
+import { makeSqliteRepo } from "../src/db/repo-sqlite.js";
 import { bootstrapSession, type SessionContext } from "../src/project/bootstrap.js";
 import { story, progressEvent } from "../src/db/schema.js";
 import { newId, now } from "../src/util/ids.js";
@@ -51,11 +52,12 @@ describeIf("multi-dev sync (sqld integration)", () => {
       handleA = await openDb(join(devADir, "db.sqlite"), {
         sync: { url: SYNC_URL, syncIntervalMs: 1000 },
       });
-      const sessionA: SessionContext = await bootstrapSession(handleA.db, cwd);
+      const repoA = makeSqliteRepo(handleA.db);
+      const sessionA: SessionContext = await bootstrapSession(repoA, cwd);
       await handleA.sync?.();
 
       const storyId = newId();
-      await handleA.db.insert(story).values({
+      await repoA.insertStory({
         id: storyId,
         epicId: null,
         sprintId: sessionA.activeSprint.id,
@@ -70,7 +72,7 @@ describeIf("multi-dev sync (sqld integration)", () => {
         completedAt: null,
         createdAt: now(),
       });
-      await emitEvent(handleA.db, {
+      await emitEvent(repoA, {
         projectId: sessionA.project.id,
         developerId: sessionA.developer.id,
         sprintId: sessionA.activeSprint.id,

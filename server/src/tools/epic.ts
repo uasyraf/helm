@@ -1,10 +1,9 @@
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { ToolRegistrar } from "./types.js";
 import { jsonResult } from "./types.js";
-import { epic } from "../db/schema.js";
 import { newId, now } from "../util/ids.js";
 import { emitEvent } from "../events/emit.js";
+import type { EpicUpdate } from "../db/repo.js";
 
 const EPIC_STATUS = z.enum(["open", "in-progress", "done", "dropped"]);
 
@@ -22,9 +21,9 @@ export const registerEpicTools: ToolRegistrar = (server, ctx) => {
       },
     },
     async (args) => {
-      const { db, session } = ctx;
+      const { repo, session } = ctx;
       const id = newId();
-      await db.insert(epic).values({
+      await repo.insertEpic({
         id,
         projectId: session.project.id,
         title: args.title,
@@ -34,7 +33,7 @@ export const registerEpicTools: ToolRegistrar = (server, ctx) => {
         targetSprintId: args.targetSprintId ?? null,
         createdAt: now(),
       });
-      await emitEvent(db, {
+      await emitEvent(repo, {
         projectId: session.project.id,
         developerId: session.developer.id,
         sprintId: session.activeSprint.id,
@@ -60,16 +59,16 @@ export const registerEpicTools: ToolRegistrar = (server, ctx) => {
       },
     },
     async (args) => {
-      const { db, session } = ctx;
-      const updates: Record<string, unknown> = {};
+      const { repo, session } = ctx;
+      const updates: EpicUpdate = {};
       if (args.title !== undefined) updates.title = args.title;
       if (args.description !== undefined) updates.description = args.description;
       if (args.priority !== undefined) updates.priority = args.priority;
       if (args.status !== undefined) updates.status = args.status;
       if (Object.keys(updates).length === 0) return jsonResult({ id: args.id, changed: false });
 
-      await db.update(epic).set(updates).where(eq(epic.id, args.id));
-      await emitEvent(db, {
+      await repo.updateEpic(args.id, updates);
+      await emitEvent(repo, {
         projectId: session.project.id,
         developerId: session.developer.id,
         sprintId: session.activeSprint.id,
@@ -92,10 +91,10 @@ export const registerEpicTools: ToolRegistrar = (server, ctx) => {
       },
     },
     async (args) => {
-      const { db, session } = ctx;
+      const { repo, session } = ctx;
       const status = args.dropped ? "dropped" : "done";
-      await db.update(epic).set({ status }).where(eq(epic.id, args.id));
-      await emitEvent(db, {
+      await repo.updateEpic(args.id, { status });
+      await emitEvent(repo, {
         projectId: session.project.id,
         developerId: session.developer.id,
         sprintId: session.activeSprint.id,

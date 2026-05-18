@@ -1,6 +1,4 @@
-import { and, eq } from "drizzle-orm";
-import type { Db } from "../db/client.js";
-import { developer, project, sprint } from "../db/schema.js";
+import type { HelmRepo } from "../db/repo.js";
 import type { Project, Developer, Sprint } from "../db/schema.js";
 import { newId, now } from "../util/ids.js";
 import { detectProject } from "./detect.js";
@@ -14,7 +12,7 @@ export interface SessionContext {
   warnings: string[];
 }
 
-export async function bootstrapSession(db: Db, cwd: string): Promise<SessionContext> {
+export async function bootstrapSession(repo: HelmRepo, cwd: string): Promise<SessionContext> {
   const warnings: string[] = [];
   const detected = detectProject(cwd);
   if (detected.warning) warnings.push(detected.warning);
@@ -22,9 +20,9 @@ export async function bootstrapSession(db: Db, cwd: string): Promise<SessionCont
   const identity = resolveIdentity(cwd);
   if (identity.prompt) warnings.push(identity.prompt);
 
-  const projectRow = await ensureProject(db, detected);
-  const developerRow = await ensureDeveloper(db, projectRow.id, identity);
-  const sprintRow = await ensureActiveSprint(db, projectRow, developerRow.id);
+  const projectRow = await ensureProject(repo, detected);
+  const developerRow = await ensureDeveloper(repo, projectRow.id, identity);
+  const sprintRow = await ensureActiveSprint(repo, projectRow, developerRow.id);
 
   return {
     project: projectRow,
@@ -34,10 +32,9 @@ export async function bootstrapSession(db: Db, cwd: string): Promise<SessionCont
   };
 }
 
-async function ensureProject(db: Db, detected: ReturnType<typeof detectProject>): Promise<Project> {
-  const existing = await db.select().from(project).where(eq(project.slug, detected.slug)).limit(1);
-  if (existing[0]) return existing[0];
-
+async function ensureProject(repo: HelmRepo, detected: ReturnType<typeof detectProject>): Promise<Project> {
+  const existing = await repo.findProjectBySlug(detected.slug);
+  if (existing) return existing;
   const row: Project = {
     id: newId(),
     slug: detected.slug,
@@ -49,27 +46,21 @@ async function ensureProject(db: Db, detected: ReturnType<typeof detectProject>)
     estimationEnabled: true,
     createdAt: now(),
   };
-  await db.insert(project).values(row);
+  await repo.insertProject(row);
   return row;
 }
 
 async function ensureDeveloper(
-  db: Db,
+  repo: HelmRepo,
   projectId: string,
   identity: ReturnType<typeof resolveIdentity>,
 ): Promise<Developer> {
-  const existing = await db
-    .select()
-    .from(developer)
-    .where(and(eq(developer.projectId, projectId), eq(developer.handle, identity.handle)))
-    .limit(1);
-
-  if (existing[0]) {
-    const updated: Developer = { ...existing[0], lastSeenAt: now() };
-    await db.update(developer).set({ lastSeenAt: updated.lastSeenAt }).where(eq(developer.id, existing[0].id));
+  const existing = await repo.findDeveloperByHandle(projectId, identity.handle);
+  if (existing) {
+    const updated: Developer = { ...existing, lastSeenAt: now() };
+    await repo.touchDeveloper(existing.id, updated.lastSeenAt);
     return updated;
   }
-
   const row: Developer = {
     id: newId(),
     projectId,
@@ -77,30 +68,25 @@ async function ensureDeveloper(
     email: identity.email,
     lastSeenAt: now(),
   };
-  await db.insert(developer).values(row);
+  await repo.insertDeveloper(row);
   return row;
 }
 
-async function ensureActiveSprint(db: Db, projectRow: Project, developerId: string): Promise<Sprint> {
-  const existing = await db
-    .select()
-    .from(sprint)
-    .where(and(eq(sprint.projectId, projectRow.id), eq(sprint.status, "active")))
-    .limit(1);
-  if (existing[0]) return existing[0];
-
+async function ensureActiveSprint(repo: HelmRepo, projectRow: Project, developerId: string): Promise<Sprint> {
+  const existing = await repo.findActiveSprint(projectRow.id);
+  if (existing) return existing;
   const row: Sprint = {
     id: newId(),
     projectId: projectRow.id,
-    name: `sprint-1`,
+    name: "sprint-1",
     goal: null,
     startedAt: now(),
     endedAt: null,
     status: "active",
     wipLimit: null,
   };
-  await db.insert(sprint).values(row);
-  await emitEvent(db, {
+  await repo.insertSprint(row);
+  await emitEvent(repo, {
     projectId: projectRow.id,
     developerId,
     sprintId: row.id,
