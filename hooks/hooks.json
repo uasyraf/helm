@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx -y @uasyraf/helm banner 2>/dev/null # helm: SessionStart",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

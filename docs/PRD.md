@@ -1,6 +1,8 @@
-# Project Tracker MCP — PRD (Scaffold v0.2)
+# Project Tracker MCP — PRD (Scaffold v0.3)
 
 > Status: scaffold for iterative discussion. Sections marked `[D]` are anchors for design conversation. Nothing here is locked.
+
+> **v0.3 changes**: install-UX hardening — explicit Node 22+ prereq, slug + identity fallback chains, per-sync-mode prereqs table, marketplace-deprecation fallback install path, new open questions (npm scope, monorepo, no-git env).
 
 > **v0.2 changes**: agile model decided (Scrumban-lite); cycle → sprint, goal → epic; story inserted between epic and task; t-shirt sizing optional; local-first sync opt-in confirmed.
 
@@ -38,9 +40,9 @@ The product follows a pragmatic Scrumban shape — opinionated enough to give st
 
 Override knobs (project-level config): sprint length, WIP limits, estimation on/off, sizing scale, default story status workflow.
 
-## Working Name `[D]`
+## Working Name
 
-Placeholder: `tracker-mcp`. Alternatives still on the table: `helm`, `compass`, `logbook`, `cairn`, `keel`. Pick before v1 ship.
+**Decided (2026-05-18): `helm`.** Product brand and CLI name. npm package published as `@uasyraf/helm` (personal scope — see Open Q13 resolution). Local DB lives at `~/.helm/<slug>.db`. Repo directory may remain `tracker-mcp` historically.
 
 ## Target Users
 
@@ -78,6 +80,13 @@ Each is a discussion anchor — expand, cut, reshape as we iterate.
 ### F1: Project primitive
 One repo = one project. Auto-detected from `git remote get-url origin` on first run. Slug, name, description, optional homepage. Project-level config: sprint length, WIP limits on/off, estimation on/off, DoD text.
 
+**Auto-detection fallback chain** (slug derivation, in order):
+1. `git remote get-url origin` → strip protocol and `.git`; slug = `<org>-<repo>` from last two path segments
+2. No remote, git repo exists: cwd basename + one-line warning
+3. No git at all: cwd basename, warn, suggest `init --slug <name>` for explicit override
+
+**Monorepo override (proposed default — see Open Questions)** — `.helm/project.json` at any cwd ancestor pins the project boundary; nearest wins. Without an override, one git root = one project.
+
 ### F2: Sprints
 Fixed-length time windows (default 2 weeks; configurable). Fields: name, sprint goal (one-line), `started_at`, `ended_at`, status (`planned | active | closed`), optional WIP limit. Auto-rollover behavior on close: incomplete stories return to backlog by default (configurable to next sprint).
 
@@ -111,7 +120,7 @@ Append-only event log. Every write through the MCP server emits a row. Schema: `
 `kind` enum: `sprint.* | epic.* | story.* | task.* | debt.opened | debt.closed | decision.recorded | mission.linked | mission.logged`.
 
 ### F9: Developers
-Lightweight identity. Auto-created from `$USER` + `git config user.email` on first run. No accounts, no login for local mode. Hosted/team mode adds API tokens. Workload view = `SUM(story.size) WHERE assignee = X AND sprint = current`.
+Lightweight identity. Auto-created via this fallback chain on first run: `git config user.email` (preferred) → `$USER@local` (fallback) → `anonymous` with a one-time prompt to set an identity. No accounts, no login for local mode. Hosted/team mode adds API tokens. Workload view = `SUM(story.size) WHERE assignee = X AND sprint = current`.
 
 ### F10: Decisions (ADR-lite)
 Captured architectural decisions with context, decision, status (`proposed | accepted | superseded`). Optional — Nelson's captain's log can auto-emit these.
@@ -133,11 +142,21 @@ Embeddable iframe + standalone deploy. No realtime — page refreshes are fine f
 ### F12: Multi-dev sync
 Three modes, user picks (local-first default confirmed):
 
-1. **Local-only** (default) — SQLite file in `~/.tracker/`, no network
+1. **Local-only** (default) — SQLite file in `~/.helm/`, no network
 2. **Turso sync** — set `TRACKER_SYNC_URL=libsql://...`, embedded replicas keep local reads fast
 3. **BYOS Postgres** — set `TRACKER_DB_URL=postgres://...`, same Drizzle schema
 
-Team config lives in `.tracker/config.json` (committed to repo). Teammates running `npx -y @x/tracker-mcp` auto-pick it up.
+Team config lives in `.helm/config.json` (committed to repo). Teammates running `npx -y @uasyraf/helm` auto-pick it up.
+
+**Prerequisites per mode**
+
+| Mode | External deps |
+|---|---|
+| Local-only | Node 22+. Nothing else. |
+| Turso sync | Node 22+, free Turso account, one-time `turso db create <name>` to get the libsql URL |
+| BYOS Postgres | Node 22+, reachable Postgres URL with create-table privileges |
+
+No mode requires running a server, opening a port, or operating a database process. Turso embedded replicas keep local reads fast even under sync.
 
 ### F13: Claude Code integration
 The load-bearing four touchpoints — see "Integration Surface" below.
@@ -165,7 +184,7 @@ Coexist by picking different worker ports (`37800 + uid % 100` vs claude-mem's `
 | Layer | Choice | Why |
 |---|---|---|
 | Language | TypeScript (Node 22+) | Best MCP SDK, shared types with dashboard |
-| Distribution | npm, `npx -y @x/tracker-mcp` | Lowest friction; uvx needs `uv` install, Docker needs daemon |
+| Distribution | npm, `npx -y @uasyraf/helm` | Lowest friction; uvx needs `uv` install, Docker needs daemon |
 | Transport | Dual-mode: stdio default, `--http` flag for team server | One binary, same backend; matches official servers |
 | Storage | libSQL (Turso) default, Postgres optional | Embedded replicas = microsecond reads + optional sync; Drizzle abstracts both |
 | ORM | Drizzle | Single schema → libSQL + Postgres; shared with dashboard |
@@ -249,11 +268,15 @@ Load-bearing four touchpoints (everything else is opt-in polish):
 
 ## Distribution & Install UX
 
+**Prerequisites**
+- Node 22+ (npx entry point exits with a friendly error on older Node)
+- Git is recommended (powers auto-detection); not required (cwd basename fallback)
+
 First-run flow (zero config, local-first):
 
 ```bash
-claude mcp add tracker -- npx -y @x/tracker-mcp
-# → creates ~/.tracker/<project-slug>.db
+claude mcp add tracker -- npx -y @uasyraf/helm
+# → creates ~/.helm/<project-slug>.db
 # → infers project from `git remote get-url origin` or cwd
 # → registers $USER as developer
 # → seeds default sprint (2 weeks, starts today)
@@ -263,18 +286,30 @@ claude mcp add tracker -- npx -y @x/tracker-mcp
 Team setup (opt-in, one extra step):
 
 ```bash
-npx @x/tracker-mcp init --team
+npx @uasyraf/helm init --team
 # → prompts for sync URL (Turso, Postgres, or hosted)
-# → writes .tracker/config.json (commit this to repo)
-# → teammates' next `npx -y @x/tracker-mcp` picks it up automatically
+# → writes .helm/config.json (commit this to repo)
+# → teammates' next `npx -y @uasyraf/helm` picks it up automatically
 ```
 
 Plugin install path (preferred):
 
 ```bash
-/plugin install tracker-mcp@<marketplace>
+/plugin install helm@<marketplace>
 # → bundled .mcp.json registers server, hooks.json wires hooks, skills/ register slash commands
 ```
+
+**Fallback install (no plugin marketplace)**
+
+If the Anthropic plugin marketplace is unavailable, or the plugin isn't accepted into the registry, devs wire the integration manually:
+
+```bash
+claude mcp add tracker -- npx -y @<scope>/tracker-mcp
+npx @<scope>/tracker-mcp install-hooks   # merges hooks.json into ~/.claude/hooks.json
+npx @<scope>/tracker-mcp install-skills  # symlinks skills/ into ~/.claude/skills/
+```
+
+Trades a single-line `/plugin install` for three commands. Same runtime behavior. The `install-hooks` and `install-skills` subcommands are bundled with the npm package so this path is always available.
 
 ## Phased Rollout
 
@@ -306,14 +341,14 @@ To define explicitly:
 | Backlog.md adds sprints + workload | Backlog.md v2 release | Consider partnering or contributing instead of competing |
 | MCP enterprise auth lands (SEP-1686) | MCP 2026 roadmap update | Open Phase 4 hosted offering |
 | CodeScene / Faros API maturity | Either ships public API | Call their hotspot analysis instead of replicating |
-| Plugin model deprecated | Anthropic announcement | Fall back to raw MCP + manual install instructions |
+| Plugin model deprecated | Anthropic announcement | Bundled `install-hooks` / `install-skills` subcommands provide a 3-command fallback path (see Distribution & Install UX § Fallback install). Plugin status changes from "single-line install" to "3-line install" — degradation, not breakage. |
 | Agile model too opinionated | User complaints about forced sprints | Add "flow mode" (Kanban only, no sprints) as project-level switch |
 
 Re-evaluation cadence: **every 6 months** (next: Nov 2026).
 
 ## Open Questions for Discussion `[D]`
 
-1. **Name** — placeholder is `tracker-mcp`. Pick before v1.
+1. ~~**Name** — placeholder is `tracker-mcp`. Pick before v1.~~ **Resolved 2026-05-18: `helm`.** See § Working Name.
 2. **Debt marker syntax** — `// DEBT(owner=X, expires=2026-Q3, ref=DBT-12)` proposed. Friendlier alternatives? Language-agnostic comment prefix?
 3. **Sprint length default** — 2 weeks proposed. 1 week for solo devs?
 4. **Auto-rollover** — incomplete stories return to backlog or push to next sprint? Default behavior preference?
@@ -325,33 +360,36 @@ Re-evaluation cadence: **every 6 months** (next: Nov 2026).
 10. **First user / design partner** — who's the Phase 0 daily driver?
 11. **Telemetry** — opt-in anonymous usage data, or none ever?
 12. **Story sizing default** — t-shirts proposed. Story points later? Or skip sizing entirely until a team asks?
+13. ~~**npm scope** — `@x/` is placeholder. Options: personal scope (`@<handle>/tracker-mcp`), product scope (`@tracker-mcp/server`), unscoped (`tracker-mcp`). Decide before first publish.~~ **Resolved 2026-05-18: `@uasyraf/helm` (personal scope).** Revisit if/when a product org is created.
+14. **Monorepo support** — first-class subdir projects (multiple `.helm/project.json` files inside one git root) or repo-as-single-project? Default proposed: repo-as-project + optional `.helm/project.json` override at any cwd ancestor. Confirm before schema lands.
+15. **No-git environment** — slug auto-name from cwd, refuse-and-prompt, or interactive `init` flow? Default proposed in F1: auto-name + warn, with `init --slug <name>` for explicit override.
 
 ## Verification (how we know it works end-to-end)
 
 **Phase 0 acceptance**
 
-- Install: `claude mcp add tracker -- npx -y @x/tracker-mcp` succeeds in fresh shell
+- Install: `claude mcp add tracker -- npx -y @uasyraf/helm` succeeds in fresh shell
 - New session in any git repo: SessionStart banner appears with auto-inferred project name + default sprint
 - `mcp__tracker__get_status` returns sensible output (active sprint, stories, debt counts) for a new project
 - `open_story` → `move_story(id, sprint_id)` → `close_story` produces correct progress events and sprint counts
 - Manually run `mcp__tracker__log_debt` → shows up in `mcp__tracker__list_debt` next call
-- Database file exists at `~/.tracker/<slug>.db` and survives Claude restart
+- Database file exists at `~/.helm/<slug>.db` and survives Claude restart
 
 **Phase 1 acceptance**
 
 - Edit a file to add `// DEBT(owner=me, expires=2027-01)` → debt candidate appears in next `list_debt` call (worker latency < 5s)
-- Dashboard renders at `npx @x/tracker-mcp dashboard` → home view shows active sprint + killer metric
+- Dashboard renders at `npx @uasyraf/helm dashboard` → home view shows active sprint + killer metric
 - Close debt items during a sprint, then `end_sprint` → sprint review shows debt delta correctly
 - Velocity chart shows completed story points (or sized stories) per sprint
 
 **Phase 2 acceptance**
 
-- Two devs on same repo with `.tracker/config.json` pointing at shared Turso instance → both see each other's `progress_event` rows within 10s
-- `--http` mode starts: `npx @x/tracker-mcp --http --port 4000` → curl `/health` returns ok, MCP inspector connects
+- Two devs on same repo with `.helm/config.json` pointing at shared Turso instance → both see each other's `progress_event` rows within 10s
+- `--http` mode starts: `npx @uasyraf/helm --http --port 4000` → curl `/health` returns ok, MCP inspector connects
 
 **Phase 3 acceptance**
 
-- `/plugin install tracker-mcp` registers all hooks, skills, statusline
+- `/plugin install helm` registers all hooks, skills, statusline
 - Nelson Tier 3 mission completes → corresponding `progress_event` rows with `kind=mission.linked` and `kind=mission.logged` appear in dashboard timeline
 
 ## Out of Scope (v1)

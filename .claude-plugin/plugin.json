@@ -1,0 +1,9 @@
+{
+  "name": "helm",
+  "displayName": "Helm — durable project state",
+  "version": "0.1.0",
+  "description": "Plug-and-play MCP server + dashboard for sprints, epics, stories, and code-linked tech debt.",
+  "mcpServers": ".mcp.json",
+  "hooks": "hooks/hooks.json",
+  "skills": "skills/"
+}
