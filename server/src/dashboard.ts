@@ -1,4 +1,4 @@
-import { spawn, type SpawnOptions } from "node:child_process";
+import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,7 +59,30 @@ export async function runDashboard(opts: DashboardOptions): Promise<number> {
 function spawnAndWait(cmd: string, args: string[], opts: SpawnOptions): Promise<number> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, opts);
-    child.on("error", reject);
-    child.on("exit", (code) => resolve(code ?? 0));
+    const forward = forwardSignalsTo(child);
+    child.on("error", (err) => {
+      forward.dispose();
+      reject(err);
+    });
+    child.on("exit", (code) => {
+      forward.dispose();
+      resolve(code ?? 0);
+    });
   });
+}
+
+function forwardSignalsTo(child: ChildProcess): { dispose: () => void } {
+  const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
+  const handlers = signals.map((sig) => {
+    const handler = (): void => {
+      if (!child.killed) child.kill(sig);
+    };
+    process.on(sig, handler);
+    return { sig, handler };
+  });
+  return {
+    dispose(): void {
+      for (const { sig, handler } of handlers) process.off(sig, handler);
+    },
+  };
 }
