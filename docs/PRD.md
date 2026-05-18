@@ -88,7 +88,9 @@ One repo = one project. Auto-detected from `git remote get-url origin` on first 
 **Monorepo override (proposed default — see Open Questions)** — `.helm/project.json` at any cwd ancestor pins the project boundary; nearest wins. Without an override, one git root = one project.
 
 ### F2: Sprints
-Fixed-length time windows (default 2 weeks; configurable). Fields: name, sprint goal (one-line), `started_at`, `ended_at`, status (`planned | active | closed`), optional WIP limit. Auto-rollover behavior on close: incomplete stories return to backlog by default (configurable to next sprint).
+Fixed-length time windows (default 2 weeks; configurable). Fields: name, sprint goal (one-line), `started_at`, `ended_at`, status (`planned | active | closed`), optional WIP limit.
+
+**Auto-rollover (locked 2026-05-18)**: at sprint close, all stories not in `done` status are moved to backlog (`sprint_id = null`, `status = "backlog"`). Forces deliberate replanning at the next sprint planning view; prevents stale stories from auto-perpetuating. Project-level config can override to `next-sprint` (push to next sprint instead) — added when a team asks.
 
 ### F3: Epics
 Cross-sprint themes ("auth overhaul", "billing v2"). Fields: title, description, status (`open | in-progress | done | dropped`), priority. Epics contain stories. Optional `target_sprint_id` for soft commitment.
@@ -107,7 +109,7 @@ First-class debt items with: title, description, severity (low/med/high/critical
 
 - **Explicit** — via `/debt add "..."` or skill invocation
 - **Auto-detected** — `PostToolUse(Edit|Write)` worker scans diffs for:
-  - typed markers (`// DEBT(...)`, `// FIXME(expires=...)`, `// TODO(owner=...)`)
+  - **Locked debt marker syntax (2026-05-18)**: `DEBT(key=value, key=value, ...)` preceded by any line-comment prefix. Supported prefixes: `//` (C/JS/TS/Go/Rust/Java/C#/Swift/Kotlin/PHP/Scala), `#` (Python/Ruby/shell/YAML/Perl/R), `--` (SQL/Haskell/Ada/Lua). Recognized keys: `owner`, `expires` (ISO date or `YYYY-Qn`), `severity` (`low|med|high|critical`), `ref` (free-form). Unknown keys preserved in description. Examples: `// DEBT(owner=alice, expires=2026-Q3, severity=high)`, `# DEBT(owner=bob, expires=2026-12-01)`, `-- DEBT(owner=carol)`. FIXME/TODO comments are **not** scanned in v1 — too noisy in legacy codebases.
   - files crossing 500-line threshold
   - functions over 30 lines
   - `: any` introduced in TS
@@ -349,9 +351,9 @@ Re-evaluation cadence: **every 6 months** (next: Nov 2026).
 ## Open Questions for Discussion `[D]`
 
 1. ~~**Name** — placeholder is `tracker-mcp`. Pick before v1.~~ **Resolved 2026-05-18: `helm`.** See § Working Name.
-2. **Debt marker syntax** — `// DEBT(owner=X, expires=2026-Q3, ref=DBT-12)` proposed. Friendlier alternatives? Language-agnostic comment prefix?
+2. ~~**Debt marker syntax** — `// DEBT(owner=X, expires=2026-Q3, ref=DBT-12)` proposed. Friendlier alternatives? Language-agnostic comment prefix?~~ **Resolved 2026-05-18**: `DEBT(key=value, ...)` preceded by `//`, `#`, or `--`. See § F7 for full spec. FIXME/TODO not scanned in v1.
 3. **Sprint length default** — 2 weeks proposed. 1 week for solo devs?
-4. **Auto-rollover** — incomplete stories return to backlog or push to next sprint? Default behavior preference?
+4. ~~**Auto-rollover** — incomplete stories return to backlog or push to next sprint?~~ **Resolved 2026-05-18**: return to backlog. See § F2 for full spec. Project-level `rollover` override deferred until requested.
 5. **Task vs TodoWrite boundary** — Suggested rule: TodoWrite is per-session decomposition; tracker tasks are durable assignments shared with the team. Confirm.
 6. **Dashboard auth (team mode)** — shared link, API token, magic link, full SSO later?
 7. **Sync conflict semantics** — Turso handles it transparently for the append-only event log. For `story.status` updates, last-write-wins or vector-clock? Pragmatic answer: LWW for v1, revisit if it bites.

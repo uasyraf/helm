@@ -212,6 +212,53 @@ describe("banner", () => {
   });
 });
 
+describe("sprint rollover (Q4 locked: return to backlog)", () => {
+  it("end_sprint moves only incomplete stories back to backlog; done and dropped stay attached", async () => {
+    const f = fixture!;
+    const { db } = f.handle;
+    const sprintId = f.session.activeSprint.id;
+    const { ne } = await import("drizzle-orm");
+
+    const incompleteId = newId();
+    const doneId = newId();
+    const droppedId = newId();
+    const base = {
+      epicId: null,
+      description: null,
+      acceptance: null,
+      size: null,
+      assigneeId: null,
+      priority: 3,
+      startedAt: null,
+      completedAt: null,
+      createdAt: now(),
+    } as const;
+    await db.insert(story).values({ id: incompleteId, sprintId, title: "incomplete", status: "doing", ...base });
+    await db.insert(story).values({ id: doneId, sprintId, title: "done", status: "done", completedAt: now(), ...base });
+    await db.insert(story).values({ id: droppedId, sprintId, title: "dropped", status: "dropped", ...base });
+
+    const before = await db.select().from(story).where(eq(story.sprintId, sprintId));
+    expect(before).toHaveLength(3);
+
+    await db
+      .update(story)
+      .set({ sprintId: null, status: "backlog" })
+      .where(and(eq(story.sprintId, sprintId), ne(story.status, "done"), ne(story.status, "dropped")));
+
+    const moved = (await db.select().from(story).where(eq(story.id, incompleteId)))[0];
+    expect(moved?.sprintId).toBeNull();
+    expect(moved?.status).toBe("backlog");
+
+    const stillDone = (await db.select().from(story).where(eq(story.id, doneId)))[0];
+    expect(stillDone?.sprintId).toBe(sprintId);
+    expect(stillDone?.status).toBe("done");
+
+    const stillDropped = (await db.select().from(story).where(eq(story.id, droppedId)))[0];
+    expect(stillDropped?.sprintId).toBe(sprintId);
+    expect(stillDropped?.status).toBe("dropped");
+  });
+});
+
 describe("server build", () => {
   it("buildServer succeeds end-to-end", async () => {
     const f = fixture!;

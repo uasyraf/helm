@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ToolRegistrar } from "./types.js";
 import { jsonResult } from "./types.js";
@@ -61,7 +61,7 @@ export const registerSprintTools: ToolRegistrar = (server, ctx) => {
     "end_sprint",
     {
       title: "End the active sprint",
-      description: "Closes the active sprint and computes the debt delta + completed stories summary.",
+      description: "Closes the active sprint. Incomplete stories return to backlog (locked default — see PRD F2).",
       inputSchema: {},
     },
     async () => {
@@ -75,6 +75,30 @@ export const registerSprintTools: ToolRegistrar = (server, ctx) => {
       if (!row) {
         return jsonResult({ error: "no active sprint" });
       }
+
+      const incomplete = await db
+        .select({ id: story.id, title: story.title })
+        .from(story)
+        .where(and(eq(story.sprintId, row.id), ne(story.status, "done"), ne(story.status, "dropped")));
+
+      if (incomplete.length > 0) {
+        await db
+          .update(story)
+          .set({ sprintId: null, status: "backlog" })
+          .where(and(eq(story.sprintId, row.id), ne(story.status, "done"), ne(story.status, "dropped")));
+
+        for (const s of incomplete) {
+          await emitEvent(db, {
+            projectId: session.project.id,
+            developerId: session.developer.id,
+            sprintId: row.id,
+            kind: "story.moved",
+            refId: s.id,
+            summary: `${s.title} → backlog (sprint rollover)`,
+          });
+        }
+      }
+
       await db.update(sprint).set({ status: "closed", endedAt: now() }).where(eq(sprint.id, row.id));
       await emitEvent(db, {
         projectId: session.project.id,
@@ -82,9 +106,14 @@ export const registerSprintTools: ToolRegistrar = (server, ctx) => {
         sprintId: row.id,
         kind: "sprint.ended",
         refId: row.id,
-        summary: `${row.name} ended`,
+        summary: `${row.name} ended${incomplete.length > 0 ? ` (${incomplete.length} rolled to backlog)` : ""}`,
       });
-      return jsonResult({ id: row.id, name: row.name, status: "closed" });
+      return jsonResult({
+        id: row.id,
+        name: row.name,
+        status: "closed",
+        rolledToBacklog: incomplete.length,
+      });
     },
   );
 
