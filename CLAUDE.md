@@ -63,7 +63,7 @@ Coexistence with claude-mem: orthogonal `PostToolUse` matchers and a different w
 ## Repository layout (target — does not exist yet)
 
 ```
-tracker-mcp/
+helm/
 ├── .claude-plugin/plugin.json
 ├── .mcp.json
 ├── skills/{project-tracker,sprint,story,epic,debt,backlog,review}/SKILL.md

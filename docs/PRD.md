@@ -44,7 +44,7 @@ Override knobs (project-level config): sprint length, WIP limits, estimation on/
 
 ## Working Name
 
-**Decided (2026-05-18): `helm`.** Product brand and CLI name. npm package published as `@uasyraf/helm` (personal scope — see Open Q13 resolution). Local DB lives at `~/.helm/<slug>.db`. Repo directory may remain `tracker-mcp` historically.
+**Decided (2026-05-18): `helm`.** Product brand, CLI name, repo directory, and npm package (`@uasyraf/helm`) — all aligned. Local DB lives at `~/.helm/<slug>.db`. The repo was briefly named `tracker-mcp` during scaffolding; renamed 2026-05-18 once the product name was locked.
 
 ## Target Users
 
@@ -179,7 +179,7 @@ Strict separation:
 | Question | Routes to |
 |---|---|
 | "What did I try yesterday on auth?" | claude-mem |
-| "What's the state of the auth epic?" | tracker-mcp |
+| "What's the state of the auth epic?" | helm |
 
 Coexist by picking different worker ports (`37800 + uid % 100` vs claude-mem's `37700 + uid % 100`) and orthogonal `PostToolUse` matchers.
 
@@ -246,7 +246,7 @@ All response schemas are explicit DTOs.
 Ship as a **plugin**, not a raw MCP server. Layout:
 
 ```
-tracker-mcp/
+helm/
 ├── .claude-plugin/plugin.json
 ├── .mcp.json
 ├── skills/
@@ -308,9 +308,9 @@ Plugin install path (preferred):
 If the Anthropic plugin marketplace is unavailable, or the plugin isn't accepted into the registry, devs wire the integration manually:
 
 ```bash
-claude mcp add tracker -- npx -y @<scope>/tracker-mcp
-npx @<scope>/tracker-mcp install-hooks   # merges hooks.json into ~/.claude/hooks.json
-npx @<scope>/tracker-mcp install-skills  # symlinks skills/ into ~/.claude/skills/
+claude mcp add helm -- npx -y @uasyraf/helm
+npx @uasyraf/helm install-hooks   # merges hooks.json into ~/.claude/hooks.json
+npx @uasyraf/helm install-skills  # symlinks skills/ into ~/.claude/skills/
 ```
 
 Trades a single-line `/plugin install` for three commands. Same runtime behavior. The `install-hooks` and `install-skills` subcommands are bundled with the npm package so this path is always available.
@@ -363,7 +363,7 @@ Re-evaluation cadence: **every 6 months** (next: Nov 2026).
 7. ~~**Sync conflict semantics** — Turso handles it transparently for the append-only event log. For `story.status` updates, last-write-wins or vector-clock? Pragmatic answer: LWW for v1, revisit if it bites.~~ **Resolved 2026-05-18: LWW for v1.** Append-only events stay conflict-free by construction. Mutable rows take last-write-wins. Revisit (vector clocks / CRDTs) only if a real team reports a bite.
 8. ~~**Public dashboard for OSS** — separate feature or just "team mode with `--public` flag"?~~ **Resolved 2026-05-18: deferred to Phase 4.** Not in v1 scope. When demand surfaces, ship as `--public` flag on team mode, read-only routes only, opt-in per project.
 9. ~~**License** — MIT, Apache 2.0, or AGPL (to discourage SaaS clones)?~~ **Resolved 2026-05-18: MIT.** Viral-friendly; quality is the moat, not the license.
-10. ~~**First user / design partner** — who's the Phase 0 daily driver?~~ **Resolved 2026-05-18: solo (ummar@artiselite.net).** Broader design-partner search starts after npm publish. helm is currently tracking its own development in `~/.helm/tracker-mcp.db` — Phase 0 daily-driver gate is met by the project itself.
+10. ~~**First user / design partner** — who's the Phase 0 daily driver?~~ **Resolved 2026-05-18: solo (ummar@artiselite.net).** Broader design-partner search starts after npm publish. helm is currently tracking its own development in `~/.helm/helm.db` — Phase 0 daily-driver gate is met by the project itself.
 11. ~~**Telemetry** — opt-in anonymous usage data, or none ever?~~ **Resolved 2026-05-18: none ever.** Hard no on phone-home. helm collects nothing, sends nothing. Re-evaluate only if reach ever genuinely matters more than trust — unlikely for a Claude-Code-adjacent tool.
 12. ~~**Story sizing default** — t-shirts proposed. Story points later? Or skip sizing entirely until a team asks?~~ **Resolved 2026-05-18: t-shirts (XS/S/M/L/XL/XXL).** Implemented in `story.size` schema; project config `sizing_scale: "fibonacci"` switches to story points. Velocity chart counts done stories with size set.
 13. ~~**npm scope** — `@x/` is placeholder. Options: personal scope (`@<handle>/tracker-mcp`), product scope (`@tracker-mcp/server`), unscoped (`tracker-mcp`). Decide before first publish.~~ **Resolved 2026-05-18: `@uasyraf/helm` (personal scope).** Revisit if/when a product org is created.
