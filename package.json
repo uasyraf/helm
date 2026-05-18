@@ -32,8 +32,13 @@
     "drizzle-orm": "^0.36.0",
     "zod": "^3.23.0"
   },
+  "optionalDependencies": {
+    "pg": "^8.20.0"
+  },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.4.5",
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.10",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
