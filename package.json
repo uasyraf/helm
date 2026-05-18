@@ -7,7 +7,7 @@
     "node": ">=22.0.0"
   },
   "bin": {
-    "helm": "./dist/bin/helm.js"
+    "helm": "dist/bin/helm.js"
   },
   "main": "./dist/server/src/index.js",
   "files": [
@@ -15,7 +15,12 @@
     "skills",
     "hooks",
     ".claude-plugin",
-    ".mcp.json"
+    ".mcp.json",
+    "dashboard/build",
+    "dashboard/package.json",
+    "dashboard/svelte.config.js",
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

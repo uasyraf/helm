@@ -4,9 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Phase 0 + Phase 1 (worker + dashboard) shipped 2026-05-18. The codebase has a working MCP server (22 tools), PostToolUse debt scanner sidecar, SvelteKit dashboard, and 24 passing tests. Local data lives at `~/.helm/<slug>.db`. The product is now **self-hosted on its own data** — open `helm dashboard` against this repo and the killer metric is live.
+Phases 0 through 3 shipped 2026-05-18. The codebase has: 22-tool MCP server with HTTP transport (bearer auth) and Turso embedded-replica sync; PostToolUse debt scanner sidecar; SvelteKit dashboard with home / debt / sprints / sprint-detail / decisions views; 7 slash command skills + Nelson integration addendum; statusline. 40 unit tests passing (41 with `HELM_INTEGRATION=1` against a local sqld). Multi-dev sync live-verified at 248ms (PRD gate: 10s). BYOS Postgres data layer ready (pg-core schema, pglite-tested); tool-surface portability tracked as the one open story.
 
-Next milestones (PRD § Phased Rollout): Phase 2 (multi-dev sync — Turso, HTTP transport, BYOS Postgres) and Phase 3 (slash commands + statusline + Nelson Step 3/7 hooks).
+The product is **self-hosted on its own data** — open `helm dashboard` and the killer metric is live. `npm publish --dry-run` produces a clean 457 KB tarball; ready to publish when the user is.
+
+Phase 4 (hosted offering — OAuth, managed instances, marketplace listing) is deferred per PRD § Phased Rollout: "Only if external adoption demands it."
 
 When asked to "build," "scaffold," or "start," check `git log` and the live codebase first; the PRD is the design conversation, not a frozen spec. Treat `[D]` sections as open for discussion. Resolved open questions are crossed out in PRD § Open Questions with the resolution date.
 
