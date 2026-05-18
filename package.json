@@ -3,6 +3,29 @@
   "version": "0.1.1",
   "description": "Plug-and-play MCP server + dashboard for durable, multi-developer project state. Sprints, epics, stories, tasks, code-linked tech debt.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uasyraf/helm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/uasyraf/helm/issues"
+  },
+  "homepage": "https://github.com/uasyraf/helm#readme",
+  "keywords": [
+    "mcp",
+    "claude-code",
+    "project-management",
+    "sprint",
+    "tech-debt",
+    "kanban",
+    "scrum",
+    "scrumban",
+    "dashboard",
+    "sveltekit",
+    "turso",
+    "libsql"
+  ],
+  "author": "Ummar Asyraf <ummar@artiselite.net>",
   "engines": {
     "node": ">=22.0.0"
   },
