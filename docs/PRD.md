@@ -322,7 +322,8 @@ Trades a single-line `/plugin install` for three commands. Same runtime behavior
 | **0 — Skeleton** ✓ shipped 2026-05-18 | Local stdio server, 9 tables, `project-tracker` skill, SessionStart banner, sprint/story/task CRUD | One dev can daily-drive it |
 | **1a — Worker** ✓ shipped 2026-05-18 | `PostToolUse(Edit\|Write\|MultiEdit)` debt scanner: DEBT() markers, 500-line files, `: any`. Unix-socket sidecar daemon with auto-spawn. | Auto-detected debt appears in `list_debt` within 5s of an Edit |
 | **1b — Dashboard** ✓ shipped 2026-05-18 | SvelteKit + adapter-node. 4 routes: Home (killer metric, top debt, recent events), Debt (filterable list), Sprints (velocity SVG bars, sprint table), Sprint detail (stories + debt delta + timeline). Binds 127.0.0.1:4400. | `helm dashboard` boots; home view shows debt delta prominently |
-| **2 — Multi-dev** | `--http` mode, Turso sync, BYOS Postgres, `tracker init --team` | Two devs see each other's events |
+| **2a — HTTP + Turso sync** ✓ shipped 2026-05-18 | `helm serve --http [--port N]` with bearer auth (`HELM_API_TOKEN`). libsql embedded-replica plumbing in `openDb` via `HELM_SYNC_URL`/`HELM_SYNC_TOKEN` env or `.helm/config.json`. `helm init --team` interactive + non-interactive config writer. Two-dev live verification needs real Turso credentials. | `/health` returns 200; bearer-protected `/mcp` accepts initialize; config round-trips through `loadConfig` |
+| **2b — BYOS Postgres** | Parallel pg-core Drizzle schema, schema-target abstraction, integration test against docker-pg | `TRACKER_DB_URL=postgres://...` connects, schema migrates, tools work end-to-end |
 | **3 — Plugin polish** | Slash commands, statusline segment, Nelson Step 3/7 hooks, decisions/ADR view, velocity chart | Installable via `/plugin install`, full integration surface live |
 | **4 — Hosted (optional)** | OAuth 2.1, managed instances, marketplace listing | Only if external adoption demands it |
 

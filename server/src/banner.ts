@@ -1,18 +1,16 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { openDb, type Db } from "./db/client.js";
+import type { Db } from "./db/client.js";
+import { openProjectDb } from "./db/open-project.js";
 import { bootstrapSession, type SessionContext } from "./project/bootstrap.js";
-import { detectProject } from "./project/detect.js";
-import { dbPathFor } from "./util/paths.js";
 import { story, techDebt, progressEvent } from "./db/schema.js";
 
 export async function renderBanner(cwd: string = process.cwd()): Promise<string> {
-  const detected = detectProject(cwd);
-  const { db, client } = await openDb(dbPathFor(detected.slug));
+  const { handle } = await openProjectDb(cwd);
   try {
-    const session = await bootstrapSession(db, cwd);
-    return await formatBanner(db, session);
+    const session = await bootstrapSession(handle.db, cwd);
+    return await formatBanner(handle.db, session);
   } finally {
-    client.close();
+    handle.client.close();
   }
 }
 

@@ -24,7 +24,12 @@ export function db(): DashboardDb {
   if (cached) return cached;
   const slug = activeSlug();
   const path = join(helmHome(), `${slug}.db`);
-  const client = createClient({ url: `file:${path}` });
+  const syncUrl = process.env.HELM_SYNC_URL;
+  const syncToken = process.env.HELM_SYNC_TOKEN;
+  const syncIntervalSec = Number(process.env.HELM_SYNC_INTERVAL_MS ?? "5000") / 1000;
+  const client = syncUrl
+    ? createClient({ url: `file:${path}`, syncUrl, authToken: syncToken, syncInterval: syncIntervalSec })
+    : createClient({ url: `file:${path}` });
   cached = drizzle(client, { schema });
   return cached;
 }

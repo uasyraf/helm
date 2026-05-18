@@ -3,8 +3,7 @@ import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { detectProject } from "./project/detect.js";
-import { dbPathFor } from "./util/paths.js";
-import { openDb } from "./db/client.js";
+import { openProjectDb } from "./db/open-project.js";
 import { bootstrapSession } from "./project/bootstrap.js";
 
 function packageRoot(): string {
@@ -26,8 +25,7 @@ export interface DashboardOptions {
 export async function runDashboard(opts: DashboardOptions): Promise<number> {
   const cwd = opts.cwd ?? process.cwd();
   const detected = detectProject(cwd);
-  const dbPath = dbPathFor(detected.slug);
-  const handle = await openDb(dbPath);
+  const { handle } = await openProjectDb(cwd);
   await bootstrapSession(handle.db, cwd);
   handle.client.close();
 

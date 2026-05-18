@@ -1,10 +1,9 @@
 import { createServer, type Server, type Socket } from "node:net";
 import { existsSync, mkdirSync, unlinkSync, writeFileSync, appendFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { openDb } from "../db/client.js";
+import { openProjectDb } from "../db/open-project.js";
 import { bootstrapSession } from "../project/bootstrap.js";
-import { detectProject } from "../project/detect.js";
-import { dbPathFor, helmHome } from "../util/paths.js";
+import { helmHome } from "../util/paths.js";
 import { scanPayload, type HookPayload } from "./scanner.js";
 import { ingestScan } from "./ingest.js";
 import { workerSocketPath, workerPidPath, workerLogPath } from "./socket.js";
@@ -137,23 +136,22 @@ async function processLine(line: string, socket: Socket): Promise<void> {
 }
 
 async function processScan(req: ScanRequest): Promise<{ inserted: number; skipped: number; filePath: string | null }> {
-  const detected = detectProject(req.cwd);
-  const path = dbPathFor(detected.slug);
-  const { db, client } = await openDb(path);
+  const { handle, slug } = await openProjectDb(req.cwd);
   try {
-    const session = await bootstrapSession(db, req.cwd);
+    const session = await bootstrapSession(handle.db, req.cwd);
     const scan = scanPayload(req.payload);
     const summary = await ingestScan(scan, {
-      db,
+      db: handle.db,
       projectId: session.project.id,
       developerId: session.developer.id,
       sprintId: session.activeSprint.id,
     });
     if (summary.inserted > 0) {
-      log(`scan ${detected.slug}: +${summary.inserted} debt (${summary.skipped} skipped) @ ${summary.filePath ?? "?"}`);
+      log(`scan ${slug}: +${summary.inserted} debt (${summary.skipped} skipped) @ ${summary.filePath ?? "?"}`);
     }
+    if (handle.sync) await handle.sync();
     return summary;
   } finally {
-    client.close();
+    handle.client.close();
   }
 }
