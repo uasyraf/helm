@@ -25,6 +25,8 @@ npx @uasyraf/helm install-skills   # slash commands (/sprint, /story, /debt, ...
 
 That's it. Open a Claude Code session and the banner appears. Edit a file with a `// DEBT(...)` marker, run `/debt`, and the item shows up.
 
+**Onboarding a team or BYOS Postgres setup?** See **[ONBOARDING.md](ONBOARDING.md)** — three install paths (solo, Turso sync, Postgres, optional HTTP server), first-session checklist, troubleshooting table, and an env-var cheatsheet.
+
 ## What you get
 
 | Surface | Purpose |

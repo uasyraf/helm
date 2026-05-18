@@ -20,7 +20,8 @@
     "dashboard/package.json",
     "dashboard/svelte.config.js",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "ONBOARDING.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
