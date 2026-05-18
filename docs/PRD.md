@@ -1,6 +1,8 @@
-# Project Tracker MCP — PRD (Scaffold v0.3)
+# Project Tracker MCP — PRD (v0.4)
 
-> Status: scaffold for iterative discussion. Sections marked `[D]` are anchors for design conversation. Nothing here is locked.
+> Status: settled design. All 15 open questions resolved (see § Open Questions). Phases 0 + 1 shipped. Phase 2+ still discussion-open, but the v1 product shape is locked.
+
+> **v0.4 changes**: all open questions resolved (Q3 sprint length 2w, Q5 task/TodoWrite boundary confirmed, Q6 dashboard auth path, Q7 LWW conflict semantics, Q8 public dashboard deferred, Q10 solo daily-driver, Q11 zero telemetry, Q12 t-shirts default, Q14 monorepo override, Q15 no-git auto-name). v1 design now load-bearing.
 
 > **v0.3 changes**: install-UX hardening — explicit Node 22+ prereq, slug + identity fallback chains, per-sync-mode prereqs table, marketplace-deprecation fallback install path, new open questions (npm scope, monorepo, no-git env).
 
@@ -353,19 +355,19 @@ Re-evaluation cadence: **every 6 months** (next: Nov 2026).
 
 1. ~~**Name** — placeholder is `tracker-mcp`. Pick before v1.~~ **Resolved 2026-05-18: `helm`.** See § Working Name.
 2. ~~**Debt marker syntax** — `// DEBT(owner=X, expires=2026-Q3, ref=DBT-12)` proposed. Friendlier alternatives? Language-agnostic comment prefix?~~ **Resolved 2026-05-18**: `DEBT(key=value, ...)` preceded by `//`, `#`, or `--`. See § F7 for full spec. FIXME/TODO not scanned in v1.
-3. **Sprint length default** — 2 weeks proposed. 1 week for solo devs?
+3. ~~**Sprint length default** — 2 weeks proposed. 1 week for solo devs?~~ **Resolved 2026-05-18: 2 weeks.** Project-level `sprint_length_days` (F1 config) overrides; 1-week solo cadence is a per-project knob, not a fork in the default.
 4. ~~**Auto-rollover** — incomplete stories return to backlog or push to next sprint?~~ **Resolved 2026-05-18**: return to backlog. See § F2 for full spec. Project-level `rollover` override deferred until requested.
-5. **Task vs TodoWrite boundary** — Suggested rule: TodoWrite is per-session decomposition; tracker tasks are durable assignments shared with the team. Confirm.
-6. **Dashboard auth (team mode)** — shared link, API token, magic link, full SSO later?
-7. **Sync conflict semantics** — Turso handles it transparently for the append-only event log. For `story.status` updates, last-write-wins or vector-clock? Pragmatic answer: LWW for v1, revisit if it bites.
-8. **Public dashboard for OSS** — separate feature or just "team mode with `--public` flag"?
+5. ~~**Task vs TodoWrite boundary** — Suggested rule: TodoWrite is per-session decomposition; tracker tasks are durable assignments shared with the team. Confirm.~~ **Resolved 2026-05-18: confirmed.** TodoWrite = ephemeral, per-session. helm `task` = durable, team-shared implementation step inside a story. project-tracker skill explicitly enforces this routing.
+6. ~~**Dashboard auth (team mode)** — shared link, API token, magic link, full SSO later?~~ **Resolved 2026-05-18: API token bearer (Phase 2); magic link in Phase 3; SSO/OIDC deferred to Phase 4.** Mirrors the HTTP transport auth on the MCP side. Local dashboard (no `--http` mode) stays localhost-only, no auth.
+7. ~~**Sync conflict semantics** — Turso handles it transparently for the append-only event log. For `story.status` updates, last-write-wins or vector-clock? Pragmatic answer: LWW for v1, revisit if it bites.~~ **Resolved 2026-05-18: LWW for v1.** Append-only events stay conflict-free by construction. Mutable rows take last-write-wins. Revisit (vector clocks / CRDTs) only if a real team reports a bite.
+8. ~~**Public dashboard for OSS** — separate feature or just "team mode with `--public` flag"?~~ **Resolved 2026-05-18: deferred to Phase 4.** Not in v1 scope. When demand surfaces, ship as `--public` flag on team mode, read-only routes only, opt-in per project.
 9. ~~**License** — MIT, Apache 2.0, or AGPL (to discourage SaaS clones)?~~ **Resolved 2026-05-18: MIT.** Viral-friendly; quality is the moat, not the license.
-10. **First user / design partner** — who's the Phase 0 daily driver?
-11. **Telemetry** — opt-in anonymous usage data, or none ever?
-12. **Story sizing default** — t-shirts proposed. Story points later? Or skip sizing entirely until a team asks?
+10. ~~**First user / design partner** — who's the Phase 0 daily driver?~~ **Resolved 2026-05-18: solo (ummar@artiselite.net).** Broader design-partner search starts after npm publish. helm is currently tracking its own development in `~/.helm/tracker-mcp.db` — Phase 0 daily-driver gate is met by the project itself.
+11. ~~**Telemetry** — opt-in anonymous usage data, or none ever?~~ **Resolved 2026-05-18: none ever.** Hard no on phone-home. helm collects nothing, sends nothing. Re-evaluate only if reach ever genuinely matters more than trust — unlikely for a Claude-Code-adjacent tool.
+12. ~~**Story sizing default** — t-shirts proposed. Story points later? Or skip sizing entirely until a team asks?~~ **Resolved 2026-05-18: t-shirts (XS/S/M/L/XL/XXL).** Implemented in `story.size` schema; project config `sizing_scale: "fibonacci"` switches to story points. Velocity chart counts done stories with size set.
 13. ~~**npm scope** — `@x/` is placeholder. Options: personal scope (`@<handle>/tracker-mcp`), product scope (`@tracker-mcp/server`), unscoped (`tracker-mcp`). Decide before first publish.~~ **Resolved 2026-05-18: `@uasyraf/helm` (personal scope).** Revisit if/when a product org is created.
-14. **Monorepo support** — first-class subdir projects (multiple `.helm/project.json` files inside one git root) or repo-as-single-project? Default proposed: repo-as-project + optional `.helm/project.json` override at any cwd ancestor. Confirm before schema lands.
-15. **No-git environment** — slug auto-name from cwd, refuse-and-prompt, or interactive `init` flow? Default proposed in F1: auto-name + warn, with `init --slug <name>` for explicit override.
+14. ~~**Monorepo support** — first-class subdir projects (multiple `.helm/project.json` files inside one git root) or repo-as-single-project? Default proposed: repo-as-project + optional `.helm/project.json` override at any cwd ancestor. Confirm before schema lands.~~ **Resolved 2026-05-18: repo-as-project + `.helm/project.json` override at any cwd ancestor (nearest wins).** Implemented in F1 detect.ts. First-class subdir projects deferred until a real monorepo asks for it.
+15. ~~**No-git environment** — slug auto-name from cwd, refuse-and-prompt, or interactive `init` flow? Default proposed in F1: auto-name + warn, with `init --slug <name>` for explicit override.~~ **Resolved 2026-05-18: auto-name from cwd basename + one-line warning.** `init --slug <name>` override path advertised in the warning. Implemented in F1 detect.ts.
 
 ## Verification (how we know it works end-to-end)
 
