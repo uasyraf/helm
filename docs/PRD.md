@@ -317,8 +317,9 @@ Trades a single-line `/plugin install` for three commands. Same runtime behavior
 
 | Phase | Scope | Done when |
 |---|---|---|
-| **0 — Skeleton** | Local stdio server, 9 tables, `project-tracker` skill, SessionStart banner, sprint/story/task CRUD | One dev can daily-drive it |
-| **1 — Killer metric** | `PostToolUse` debt scanner, SvelteKit dashboard, debt-delta visualization, sprint review view | Sprint close renders the debt delta |
+| **0 — Skeleton** ✓ shipped 2026-05-18 | Local stdio server, 9 tables, `project-tracker` skill, SessionStart banner, sprint/story/task CRUD | One dev can daily-drive it |
+| **1a — Worker** ✓ shipped 2026-05-18 | `PostToolUse(Edit\|Write\|MultiEdit)` debt scanner: DEBT() markers, 500-line files, `: any`. Unix-socket sidecar daemon with auto-spawn. | Auto-detected debt appears in `list_debt` within 5s of an Edit |
+| **1b — Dashboard** | SvelteKit dashboard, debt-delta visualization, sprint review view | Sprint close renders the debt delta |
 | **2 — Multi-dev** | `--http` mode, Turso sync, BYOS Postgres, `tracker init --team` | Two devs see each other's events |
 | **3 — Plugin polish** | Slash commands, statusline segment, Nelson Step 3/7 hooks, decisions/ADR view, velocity chart | Installable via `/plugin install`, full integration surface live |
 | **4 — Hosted (optional)** | OAuth 2.1, managed instances, marketplace listing | Only if external adoption demands it |

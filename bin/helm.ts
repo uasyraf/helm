@@ -3,8 +3,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { buildServer } from "../server/src/server.js";
 import { renderBanner } from "../server/src/banner.js";
 import { installHooks, installSkills } from "../server/src/install.js";
+import { runWorker } from "../server/src/worker/server.js";
+import { runPostToolUseHook } from "../server/src/worker/hook.js";
 
-type Command = "serve" | "banner" | "install-hooks" | "install-skills" | "help";
+type Command = "serve" | "banner" | "install-hooks" | "install-skills" | "worker" | "hook" | "help";
 
 function parseCommand(argv: readonly string[]): Command {
   const cmd = argv[0];
@@ -14,6 +16,8 @@ function parseCommand(argv: readonly string[]): Command {
     case "banner":
     case "install-hooks":
     case "install-skills":
+    case "worker":
+    case "hook":
       return cmd;
     case "-h":
     case "--help":
@@ -42,10 +46,10 @@ async function runBanner(): Promise<void> {
 
 function runInstallHooks(): void {
   const result = installHooks();
-  if (result.installed) {
-    process.stdout.write(`[helm] SessionStart hook installed at ${result.path}\n`);
+  if (result.installed.length > 0) {
+    process.stdout.write(`[helm] installed hooks (${result.installed.join(", ")}) at ${result.path}\n`);
   } else {
-    process.stdout.write(`[helm] hook already present at ${result.path}\n`);
+    process.stdout.write(`[helm] hooks already present at ${result.path}\n`);
   }
 }
 
@@ -65,12 +69,14 @@ function runHelp(): void {
       "helm — durable, multi-developer project state for Claude Code",
       "",
       "usage:",
-      "  helm                  start MCP server on stdio (default)",
-      "  helm serve            same as above",
-      "  helm banner           print one-line SessionStart banner",
-      "  helm install-hooks    wire SessionStart banner into ~/.claude/settings.json",
-      "  helm install-skills   symlink bundled skills/ into ~/.claude/skills/",
-      "  helm help             show this message",
+      "  helm                          start MCP server on stdio (default)",
+      "  helm serve                    same as above",
+      "  helm banner                   print one-line SessionStart banner",
+      "  helm worker                   run the PostToolUse scanner daemon (foreground)",
+      "  helm hook post-tool-use       hook entry: reads stdin, forwards to worker",
+      "  helm install-hooks            wire SessionStart + PostToolUse hooks into ~/.claude/settings.json",
+      "  helm install-skills           symlink bundled skills/ into ~/.claude/skills/",
+      "  helm help                     show this message",
       "",
     ].join("\n"),
   );
@@ -84,6 +90,12 @@ async function main(): Promise<void> {
       return;
     case "banner":
       await runBanner();
+      return;
+    case "worker":
+      await runWorker();
+      return;
+    case "hook":
+      await runPostToolUseHook();
       return;
     case "install-hooks":
       runInstallHooks();

@@ -19,6 +19,7 @@ interface SettingsShape {
 }
 
 const HELM_SESSION_START_TAG = "# helm: SessionStart";
+const HELM_POST_TOOL_USE_TAG = "# helm: PostToolUse";
 
 function packageRoot(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -32,7 +33,7 @@ function packageRoot(): string {
 }
 
 export function installHooks(settingsPath: string = join(homedir(), ".claude", "settings.json")): {
-  installed: boolean;
+  installed: string[];
   path: string;
 } {
   mkdirSync(dirname(settingsPath), { recursive: true });
@@ -41,22 +42,46 @@ export function installHooks(settingsPath: string = join(homedir(), ".claude", "
     : {};
   existing.hooks ??= {};
   existing.hooks.SessionStart ??= [];
+  existing.hooks.PostToolUse ??= [];
 
-  const helmCommand = `npx -y @uasyraf/helm banner 2>/dev/null ${HELM_SESSION_START_TAG}`;
-  const already = existing.hooks.SessionStart.some((m) =>
-    m.hooks.some((h) => h.command.includes(HELM_SESSION_START_TAG)),
-  );
-  if (already) {
-    return { installed: false, path: settingsPath };
+  const installed: string[] = [];
+
+  if (!hasTag(existing.hooks.SessionStart, HELM_SESSION_START_TAG)) {
+    existing.hooks.SessionStart.push({
+      matcher: "*",
+      hooks: [
+        {
+          type: "command",
+          command: `npx -y @uasyraf/helm banner 2>/dev/null ${HELM_SESSION_START_TAG}`,
+          timeout: 5,
+        },
+      ],
+    });
+    installed.push("SessionStart");
   }
 
-  existing.hooks.SessionStart.push({
-    matcher: "*",
-    hooks: [{ type: "command", command: helmCommand, timeout: 5 }],
-  });
+  if (!hasTag(existing.hooks.PostToolUse, HELM_POST_TOOL_USE_TAG)) {
+    existing.hooks.PostToolUse.push({
+      matcher: "Edit|Write|MultiEdit",
+      hooks: [
+        {
+          type: "command",
+          command: `npx -y @uasyraf/helm hook post-tool-use 2>/dev/null ${HELM_POST_TOOL_USE_TAG}`,
+          timeout: 5,
+        },
+      ],
+    });
+    installed.push("PostToolUse");
+  }
 
-  writeFileSync(settingsPath, JSON.stringify(existing, null, 2) + "\n", "utf8");
-  return { installed: true, path: settingsPath };
+  if (installed.length > 0) {
+    writeFileSync(settingsPath, JSON.stringify(existing, null, 2) + "\n", "utf8");
+  }
+  return { installed, path: settingsPath };
+}
+
+function hasTag(matchers: HookMatcher[], tag: string): boolean {
+  return matchers.some((m) => m.hooks.some((h) => h.command.includes(tag)));
 }
 
 export function installSkills(skillsRoot: string = join(homedir(), ".claude", "skills")): {

@@ -11,6 +11,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx -y @uasyraf/helm hook post-tool-use 2>/dev/null # helm: PostToolUse",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }
