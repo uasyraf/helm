@@ -5,8 +5,9 @@ import { renderBanner } from "../server/src/banner.js";
 import { installHooks, installSkills } from "../server/src/install.js";
 import { runWorker } from "../server/src/worker/server.js";
 import { runPostToolUseHook } from "../server/src/worker/hook.js";
+import { runDashboard } from "../server/src/dashboard.js";
 
-type Command = "serve" | "banner" | "install-hooks" | "install-skills" | "worker" | "hook" | "help";
+type Command = "serve" | "banner" | "install-hooks" | "install-skills" | "worker" | "hook" | "dashboard" | "help";
 
 function parseCommand(argv: readonly string[]): Command {
   const cmd = argv[0];
@@ -18,6 +19,7 @@ function parseCommand(argv: readonly string[]): Command {
     case "install-skills":
     case "worker":
     case "hook":
+    case "dashboard":
       return cmd;
     case "-h":
     case "--help":
@@ -74,6 +76,7 @@ function runHelp(): void {
       "  helm banner                   print one-line SessionStart banner",
       "  helm worker                   run the PostToolUse scanner daemon (foreground)",
       "  helm hook post-tool-use       hook entry: reads stdin, forwards to worker",
+      "  helm dashboard [--dev]        launch the SvelteKit dashboard (built mode or vite dev)",
       "  helm install-hooks            wire SessionStart + PostToolUse hooks into ~/.claude/settings.json",
       "  helm install-skills           symlink bundled skills/ into ~/.claude/skills/",
       "  helm help                     show this message",
@@ -97,6 +100,11 @@ async function main(): Promise<void> {
     case "hook":
       await runPostToolUseHook();
       return;
+    case "dashboard": {
+      const dev = process.argv.includes("--dev");
+      const code = await runDashboard({ dev });
+      process.exit(code);
+    }
     case "install-hooks":
       runInstallHooks();
       return;

@@ -13,3 +13,8 @@ coverage/
 *.db-journal
 *.db-wal
 *.db-shm
+
+# dashboard (SvelteKit) build output
+dashboard/.svelte-kit/
+dashboard/build/
+dashboard/node_modules/
