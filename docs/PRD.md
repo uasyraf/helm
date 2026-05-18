@@ -359,7 +359,7 @@ Re-evaluation cadence: **every 6 months** (next: Nov 2026).
 6. **Dashboard auth (team mode)** — shared link, API token, magic link, full SSO later?
 7. **Sync conflict semantics** — Turso handles it transparently for the append-only event log. For `story.status` updates, last-write-wins or vector-clock? Pragmatic answer: LWW for v1, revisit if it bites.
 8. **Public dashboard for OSS** — separate feature or just "team mode with `--public` flag"?
-9. **License** — MIT, Apache 2.0, or AGPL (to discourage SaaS clones)?
+9. ~~**License** — MIT, Apache 2.0, or AGPL (to discourage SaaS clones)?~~ **Resolved 2026-05-18: MIT.** Viral-friendly; quality is the moat, not the license.
 10. **First user / design partner** — who's the Phase 0 daily driver?
 11. **Telemetry** — opt-in anonymous usage data, or none ever?
 12. **Story sizing default** — t-shirts proposed. Story points later? Or skip sizing entirely until a team asks?

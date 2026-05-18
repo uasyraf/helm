@@ -4,9 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Pre-implementation. The repo currently contains only `docs/PRD.md` (Scaffold v0.2). No code, build tooling, or tests exist yet. Phase 0 (Skeleton) is the next milestone — see `docs/PRD.md` § Phased Rollout.
+Phase 0 + Phase 1 (worker + dashboard) shipped 2026-05-18. The codebase has a working MCP server (22 tools), PostToolUse debt scanner sidecar, SvelteKit dashboard, and 24 passing tests. Local data lives at `~/.helm/<slug>.db`. The product is now **self-hosted on its own data** — open `helm dashboard` against this repo and the killer metric is live.
 
-When asked to "build," "scaffold," or "start," read `docs/PRD.md` first — it is the single source of truth for product shape, data model, and integration surface. Treat sections marked `[D]` as **open for discussion**, not settled.
+Next milestones (PRD § Phased Rollout): Phase 2 (multi-dev sync — Turso, HTTP transport, BYOS Postgres) and Phase 3 (slash commands + statusline + Nelson Step 3/7 hooks).
+
+When asked to "build," "scaffold," or "start," check `git log` and the live codebase first; the PRD is the design conversation, not a frozen spec. Treat `[D]` sections as open for discussion. Resolved open questions are crossed out in PRD § Open Questions with the resolution date.
 
 ## What this product is
 
@@ -16,12 +18,14 @@ It is **not** a competitor to Linear/Jira on sprint UX, a replacement for claude
 
 ## Load-bearing architectural decisions
 
-These are **decided** in PRD v0.2 and should not be revisited without explicit user direction:
+These are **decided** in PRD v0.3 and should not be revisited without explicit user direction:
 
 | Area | Decision |
 |---|---|
+| Name | `helm`, npm package `@uasyraf/helm` (resolved 2026-05-18, PRD Q1+Q13) |
+| License | MIT (resolved 2026-05-18, PRD Q9) |
 | Language | TypeScript on Node 22+ (best MCP SDK, shared types with dashboard) |
-| Distribution | npm via `npx -y @x/tracker-mcp`, shipped as a **Claude Code plugin** (not a raw MCP server) |
+| Distribution | npm via `npx -y @uasyraf/helm`, shipped as a **Claude Code plugin** (not a raw MCP server) |
 | Transport | Dual-mode: stdio default, `--http` flag for team server — one binary |
 | Storage | libSQL (Turso) default with embedded replicas; Postgres optional via `TRACKER_DB_URL` |
 | ORM | Drizzle — single schema targets libSQL + Postgres, shared with dashboard |
@@ -73,7 +77,7 @@ When creating the skeleton, follow this exact layout — slash commands and stat
 
 Do not silently pick a default for these — surface the trade-off and ask. From PRD § Open Questions:
 
-- **Working name** — placeholder `tracker-mcp`; alternatives: `helm`, `compass`, `logbook`, `cairn`, `keel`. Pick before v1.
+- ~~**Working name** — placeholder `tracker-mcp`; alternatives: `helm`, `compass`, `logbook`, `cairn`, `keel`. Pick before v1.~~ Resolved: `helm`.
 - **Debt marker syntax** — `// DEBT(owner=X, expires=2026-Q3, ref=DBT-12)` proposed; language-agnostic prefix unconfirmed.
 - **Sprint length default** — 2 weeks proposed (1 week for solo?).
 - **Auto-rollover** — incomplete stories return to backlog (default) or push to next sprint?
@@ -87,7 +91,7 @@ Full list in `docs/PRD.md` § Open Questions for Discussion.
 ## Phase-0 acceptance gates
 
 Before claiming Phase 0 done, verify all of these (PRD § Verification):
-- `claude mcp add tracker -- npx -y @x/tracker-mcp` succeeds in a fresh shell
+- `claude mcp add helm -- npx -y @uasyraf/helm` succeeds in a fresh shell
 - New session in any git repo: SessionStart banner appears with auto-inferred project name + default sprint
 - `mcp__tracker__get_status` returns sensible output for a new project
 - `open_story` → `move_story(id, sprint_id)` → `close_story` produces correct `progress_event` rows and sprint counts
