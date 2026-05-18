@@ -13,6 +13,7 @@
     { href: "/", label: "Home" },
     { href: "/debt", label: "Debt" },
     { href: "/sprints", label: "Sprints" },
+    { href: "/decisions", label: "Decisions" },
   ];
 
   function isActive(href: string): boolean {

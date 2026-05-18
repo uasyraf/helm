@@ -14,12 +14,20 @@ interface HookMatcher {
   hooks: HookCommand[];
 }
 
+interface StatusLineSetting {
+  type: "command";
+  command: string;
+  padding?: number;
+}
+
 interface SettingsShape {
   hooks?: Record<string, HookMatcher[]>;
+  statusLine?: StatusLineSetting;
 }
 
 const HELM_SESSION_START_TAG = "# helm: SessionStart";
 const HELM_POST_TOOL_USE_TAG = "# helm: PostToolUse";
+const HELM_STATUSLINE_TAG = "# helm: statusline";
 
 function packageRoot(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -74,6 +82,15 @@ export function installHooks(settingsPath: string = join(homedir(), ".claude", "
     installed.push("PostToolUse");
   }
 
+  if (!existing.statusLine || !existing.statusLine.command.includes(HELM_STATUSLINE_TAG)) {
+    existing.statusLine = {
+      type: "command",
+      command: `npx -y @uasyraf/helm banner 2>/dev/null ${HELM_STATUSLINE_TAG}`,
+      padding: 0,
+    };
+    installed.push("statusLine");
+  }
+
   if (installed.length > 0) {
     writeFileSync(settingsPath, JSON.stringify(existing, null, 2) + "\n", "utf8");
   }
@@ -92,7 +109,7 @@ export function installSkills(skillsRoot: string = join(homedir(), ".claude", "s
   const pkgSkillsDir = join(packageRoot(), "skills");
   if (!existsSync(pkgSkillsDir)) return { installed: [], skipped: [] };
 
-  const skills = ["project-tracker"];
+  const skills = ["project-tracker", "sprint", "story", "epic", "debt", "backlog", "review", "nelson-integration"];
   const installed: string[] = [];
   const skipped: string[] = [];
   for (const name of skills) {
