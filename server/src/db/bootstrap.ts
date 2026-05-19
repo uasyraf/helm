@@ -17,6 +17,7 @@ const STATEMENTS: readonly string[] = [
     project_id TEXT NOT NULL REFERENCES project(id),
     handle TEXT NOT NULL,
     email TEXT,
+    oidc_sub TEXT,
     last_seen_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS sprint (
@@ -94,9 +95,16 @@ const STATEMENTS: readonly string[] = [
     kind TEXT NOT NULL,
     ref_id TEXT,
     summary TEXT NOT NULL,
+    user_sub TEXT,
     ts TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS schema_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )`,
   `CREATE INDEX IF NOT EXISTS idx_progress_event_ts ON progress_event(ts DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_progress_event_project_ts ON progress_event(project_id, ts DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_developer_oidc ON developer(project_id, oidc_sub)`,
   `CREATE INDEX IF NOT EXISTS idx_story_sprint ON story(sprint_id)`,
   `CREATE INDEX IF NOT EXISTS idx_story_status ON story(status)`,
   `CREATE INDEX IF NOT EXISTS idx_story_project ON story(project_id)`,
@@ -119,9 +127,30 @@ async function ensureStoryProjectColumn(client: Client): Promise<void> {
   await client.execute("CREATE INDEX IF NOT EXISTS idx_story_project ON story(project_id)");
 }
 
+async function ensureColumn(client: Client, table: string, column: string, decl: string): Promise<void> {
+  const info = await client.execute(`PRAGMA table_info(${table})`);
+  const has = info.rows.some((r) => String(r.name) === column);
+  if (has) return;
+  await client.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+}
+
+export const SCHEMA_VERSION = "2";
+
+async function stampSchemaVersion(client: Client): Promise<void> {
+  await client.execute({
+    sql: "INSERT INTO schema_meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    args: ["version", SCHEMA_VERSION],
+  });
+}
+
 export async function bootstrap(client: Client): Promise<void> {
   for (const sql of STATEMENTS) {
     await client.execute(sql);
   }
   await ensureStoryProjectColumn(client);
+  await ensureColumn(client, "developer", "oidc_sub", "TEXT");
+  await ensureColumn(client, "progress_event", "user_sub", "TEXT");
+  await client.execute("CREATE INDEX IF NOT EXISTS idx_developer_oidc ON developer(project_id, oidc_sub)");
+  await client.execute("CREATE INDEX IF NOT EXISTS idx_progress_event_project_ts ON progress_event(project_id, ts DESC)");
+  await stampSchemaVersion(client);
 }

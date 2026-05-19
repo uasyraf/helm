@@ -53,6 +53,17 @@ export function makePgRepo(db: PgDb): HelmRepo {
         .limit(1);
       return (rows[0] as Developer | undefined) ?? null;
     },
+    async findDeveloperByOidcSub(projectId, oidcSub) {
+      const rows = await pg
+        .select()
+        .from(developer)
+        .where(and(eq(developer.projectId, projectId), eq(developer.oidcSub, oidcSub)))
+        .limit(1);
+      return (rows[0] as Developer | undefined) ?? null;
+    },
+    async setDeveloperOidcSub(id, oidcSub) {
+      await pg.update(developer).set({ oidcSub }).where(eq(developer.id, id));
+    },
     async insertDeveloper(row) {
       await pg.insert(developer).values(row);
     },
@@ -188,6 +199,23 @@ export function makePgRepo(db: PgDb): HelmRepo {
     },
     async updateTask(id, updates: TaskUpdate) {
       await pg.update(task).set(updates).where(eq(task.id, id));
+    },
+    async findTasksByProject(projectId, limit) {
+      const rows = await pg
+        .select({
+          id: task.id,
+          storyId: task.storyId,
+          assigneeId: task.assigneeId,
+          title: task.title,
+          status: task.status,
+          blockedBy: task.blockedBy,
+          createdAt: task.createdAt,
+        })
+        .from(task)
+        .innerJoin(story, eq(task.storyId, story.id))
+        .where(eq(story.projectId, projectId))
+        .limit(limit);
+      return rows as Task[];
     },
 
     async insertDebt(row) {

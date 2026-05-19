@@ -9,8 +9,21 @@ import { runDashboard } from "../server/src/dashboard.js";
 import { startHttpServer } from "../server/src/http/server.js";
 import { runInit } from "../server/src/init.js";
 import { runMigrate } from "../server/src/migrate.js";
+import { runExport, runImport } from "../server/src/admin/cli.js";
 
-type Command = "serve" | "banner" | "install-hooks" | "install-skills" | "worker" | "hook" | "dashboard" | "init" | "migrate" | "help";
+type Command =
+  | "serve"
+  | "banner"
+  | "install-hooks"
+  | "install-skills"
+  | "worker"
+  | "hook"
+  | "dashboard"
+  | "init"
+  | "migrate"
+  | "export"
+  | "import"
+  | "help";
 
 function parseCommand(argv: readonly string[]): Command {
   const cmd = argv[0];
@@ -25,6 +38,8 @@ function parseCommand(argv: readonly string[]): Command {
     case "dashboard":
     case "init":
     case "migrate":
+    case "export":
+    case "import":
       return cmd;
     case "-h":
     case "--help":
@@ -143,6 +158,9 @@ function runHelp(): void {
       "  helm dashboard [--dev]        launch the SvelteKit dashboard (built mode or vite dev)",
       "  helm init --team              write .helm/config.json with shared Turso sync URL",
       "  helm migrate                  merge legacy ~/.helm/<slug>.db files into the unified ~/.helm/helm.db",
+      "  helm export [--out file]      dump every project's state to a versioned JSON",
+      "                                  [--remote URL --token T] hit a remote helm-server admin endpoint",
+      "  helm import --in file         restore from an export (locally, or via --remote URL --token T)",
       "  helm install-hooks            wire SessionStart + PostToolUse into ~/.claude/settings.json",
       "  helm install-skills           symlink bundled skills/* (project-tracker + 7 slash commands) into ~/.claude/skills/",
       "  helm help                     show this message",
@@ -176,6 +194,20 @@ async function main(): Promise<void> {
       return;
     case "migrate":
       await runMigrateCmd();
+      return;
+    case "export":
+      await runExport({
+        out: flagValue("out"),
+        remoteUrl: flagValue("remote") ?? process.env.HELM_URL,
+        token: flagValue("token") ?? process.env.HELM_TOKEN,
+      });
+      return;
+    case "import":
+      await runImport({
+        in: flagValue("in"),
+        remoteUrl: flagValue("remote") ?? process.env.HELM_URL,
+        token: flagValue("token") ?? process.env.HELM_TOKEN,
+      });
       return;
     case "install-hooks":
       runInstallHooks();

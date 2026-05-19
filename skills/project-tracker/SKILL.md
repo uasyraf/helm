@@ -28,10 +28,28 @@ Use helm tools whenever the user references project-level state that should surv
 
 If unsure: durable + shared = helm. Per-session + personal = TodoWrite. Conversation recall = claude-mem.
 
-## Tool surface (Phase 0)
+## Remote-mode first turn — IMPORTANT
+
+If the helm MCP server is configured to point at a remote URL (Claude Code's `/mcp` shows it as a remote / OAuth-protected server, not a local stdio process), the session starts **with no project bound**. Tool calls other than `set_active_project` and `list_accessible_projects` will return `{ error: { code: "NO_ACTIVE_PROJECT" } }` until a project is selected.
+
+On the **first** turn against a remote helm:
+
+1. Detect the project slug from the cwd: parse `git remote get-url origin` (e.g. `git@github.com:acme/billing.git` → slug `billing`), or fall back to the directory basename.
+2. Call `set_active_project({ slug: <inferred-slug> })`.
+3. If that returns `FORBIDDEN` (the user's token has no access to that slug), call `list_accessible_projects` and offer the user the list to pick from. Do not silently pick a different project.
+4. After a successful `set_active_project`, proceed with the user's request.
+
+For stdio-mode (local helm via `npx -y @uasyraf/helm`) the session is auto-bootstrapped from the cwd's git remote — no `set_active_project` call is needed.
+
+### Login
+
+Remote helm uses OAuth 2.1. If the user has never authenticated, Claude Code's `/mcp` panel shows the server as needing login; the user runs the inline login command, the browser opens to the Keycloak realm, they sign in, the token is stored by Claude Code. After that the session works transparently. There is **no token file to manage** — Claude Code refreshes it automatically.
+
+## Tool surface
 
 | Tool | Use for |
 |---|---|
+| `set_active_project` / `list_accessible_projects` | Remote-mode session bootstrap (see above) |
 | `get_status` | Active sprint, story counts, open debt, killer metric |
 | `start_sprint` / `end_sprint` | Sprint lifecycle |
 | `sprint_review` | Sprint summary including debt delta |

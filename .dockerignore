@@ -1,0 +1,13 @@
+**/node_modules
+**/.svelte-kit
+**/dist
+**/build
+.git
+.gitignore
+.github
+docs/wip
+**/*.log
+**/*.test.ts
+**/tests
+.helm
+helm.db

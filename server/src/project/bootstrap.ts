@@ -5,11 +5,18 @@ import { detectProject } from "./detect.js";
 import { resolveIdentity } from "./identity.js";
 import { emitEvent } from "../events/emit.js";
 
+export interface SessionIdentity {
+  handle: string;
+  email: string | null;
+  userSub: string | null;
+}
+
 export interface SessionContext {
   project: Project;
   developer: Developer;
   activeSprint: Sprint;
   warnings: string[];
+  pending: boolean;
 }
 
 export async function bootstrapSession(repo: HelmRepo, cwd: string): Promise<SessionContext> {
@@ -21,7 +28,11 @@ export async function bootstrapSession(repo: HelmRepo, cwd: string): Promise<Ses
   if (identity.prompt) warnings.push(identity.prompt);
 
   const projectRow = await ensureProject(repo, detected);
-  const developerRow = await ensureDeveloper(repo, projectRow.id, identity);
+  const developerRow = await ensureDeveloper(repo, projectRow.id, {
+    handle: identity.handle,
+    email: identity.email,
+    userSub: null,
+  });
   const sprintRow = await ensureActiveSprint(repo, projectRow, developerRow.id);
 
   return {
@@ -29,6 +40,29 @@ export async function bootstrapSession(repo: HelmRepo, cwd: string): Promise<Ses
     developer: developerRow,
     activeSprint: sprintRow,
     warnings,
+    pending: false,
+  };
+}
+
+export async function bootstrapSessionForProject(
+  repo: HelmRepo,
+  slug: string,
+  identity: SessionIdentity,
+): Promise<SessionContext> {
+  const project = await repo.findProjectBySlug(slug);
+  if (!project) throw new Error(`project '${slug}' not found`);
+  const developerRow = await ensureDeveloper(repo, project.id, identity);
+  const sprintRow = await ensureActiveSprint(repo, project, developerRow.id);
+  return { project, developer: developerRow, activeSprint: sprintRow, warnings: [], pending: false };
+}
+
+export function pendingSession(): SessionContext {
+  return {
+    project: pendingProject,
+    developer: pendingDeveloper,
+    activeSprint: pendingSprint,
+    warnings: [],
+    pending: true,
   };
 }
 
@@ -50,15 +84,21 @@ async function ensureProject(repo: HelmRepo, detected: ReturnType<typeof detectP
   return row;
 }
 
-async function ensureDeveloper(
-  repo: HelmRepo,
-  projectId: string,
-  identity: ReturnType<typeof resolveIdentity>,
-): Promise<Developer> {
-  const existing = await repo.findDeveloperByHandle(projectId, identity.handle);
+async function ensureDeveloper(repo: HelmRepo, projectId: string, identity: SessionIdentity): Promise<Developer> {
+  let existing: Developer | null = null;
+  if (identity.userSub && repo.findDeveloperByOidcSub) {
+    existing = await repo.findDeveloperByOidcSub(projectId, identity.userSub);
+  }
+  if (!existing) {
+    existing = await repo.findDeveloperByHandle(projectId, identity.handle);
+  }
   if (existing) {
     const updated: Developer = { ...existing, lastSeenAt: now() };
     await repo.touchDeveloper(existing.id, updated.lastSeenAt);
+    if (identity.userSub && !existing.oidcSub && repo.setDeveloperOidcSub) {
+      await repo.setDeveloperOidcSub(existing.id, identity.userSub);
+      updated.oidcSub = identity.userSub;
+    }
     return updated;
   }
   const row: Developer = {
@@ -66,6 +106,7 @@ async function ensureDeveloper(
     projectId,
     handle: identity.handle,
     email: identity.email,
+    oidcSub: identity.userSub,
     lastSeenAt: now(),
   };
   await repo.insertDeveloper(row);
@@ -96,3 +137,35 @@ async function ensureActiveSprint(repo: HelmRepo, projectRow: Project, developer
   });
   return row;
 }
+
+const pendingProject: Project = {
+  id: "__pending__",
+  slug: "__pending__",
+  name: "(no project selected)",
+  gitRemote: null,
+  dod: null,
+  sprintLengthDays: 14,
+  wipEnabled: false,
+  estimationEnabled: true,
+  createdAt: "1970-01-01T00:00:00.000Z",
+};
+
+const pendingDeveloper: Developer = {
+  id: "__pending__",
+  projectId: "__pending__",
+  handle: "__pending__",
+  email: null,
+  oidcSub: null,
+  lastSeenAt: "1970-01-01T00:00:00.000Z",
+};
+
+const pendingSprint: Sprint = {
+  id: "__pending__",
+  projectId: "__pending__",
+  name: "__pending__",
+  goal: null,
+  startedAt: "1970-01-01T00:00:00.000Z",
+  endedAt: null,
+  status: "pending",
+  wipLimit: null,
+};

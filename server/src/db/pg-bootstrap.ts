@@ -19,6 +19,7 @@ const STATEMENTS: readonly string[] = [
     project_id TEXT NOT NULL REFERENCES project(id),
     handle TEXT NOT NULL,
     email TEXT,
+    oidc_sub TEXT,
     last_seen_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS sprint (
@@ -96,9 +97,16 @@ const STATEMENTS: readonly string[] = [
     kind TEXT NOT NULL,
     ref_id TEXT,
     summary TEXT NOT NULL,
+    user_sub TEXT,
     ts TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS schema_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )`,
   `CREATE INDEX IF NOT EXISTS idx_progress_event_ts ON progress_event(ts DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_progress_event_project_ts ON progress_event(project_id, ts DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_developer_oidc ON developer(project_id, oidc_sub)`,
   `CREATE INDEX IF NOT EXISTS idx_story_sprint ON story(sprint_id)`,
   `CREATE INDEX IF NOT EXISTS idx_story_status ON story(status)`,
   `CREATE INDEX IF NOT EXISTS idx_story_project ON story(project_id)`,
@@ -113,7 +121,14 @@ const MIGRATIONS: readonly string[] = [
      (SELECT p.id FROM project p ORDER BY p.created_at LIMIT 1)
    )
    WHERE project_id IS NULL`,
+  `ALTER TABLE developer ADD COLUMN IF NOT EXISTS oidc_sub TEXT`,
+  `ALTER TABLE progress_event ADD COLUMN IF NOT EXISTS user_sub TEXT`,
+  `CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS idx_developer_oidc ON developer(project_id, oidc_sub)`,
+  `CREATE INDEX IF NOT EXISTS idx_progress_event_project_ts ON progress_event(project_id, ts DESC)`,
 ];
+
+export const SCHEMA_VERSION_PG = "2";
 
 export async function bootstrapPg(runner: PgQueryRunner): Promise<void> {
   for (const sql of STATEMENTS) {
@@ -122,4 +137,7 @@ export async function bootstrapPg(runner: PgQueryRunner): Promise<void> {
   for (const sql of MIGRATIONS) {
     await runner.query(sql);
   }
+  await runner.query(
+    `INSERT INTO schema_meta(key, value) VALUES('version', '${SCHEMA_VERSION_PG}') ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value`,
+  );
 }

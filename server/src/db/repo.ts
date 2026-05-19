@@ -14,6 +14,8 @@ export interface HelmRepo {
 
   // developer
   findDeveloperByHandle(projectId: string, handle: string): Promise<Developer | null>;
+  findDeveloperByOidcSub?(projectId: string, oidcSub: string): Promise<Developer | null>;
+  setDeveloperOidcSub?(id: string, oidcSub: string): Promise<void>;
   insertDeveloper(developer: Developer): Promise<void>;
   touchDeveloper(id: string, lastSeenAt: string): Promise<void>;
   findDevelopersByProject(projectId: string): Promise<Developer[]>;
@@ -47,6 +49,7 @@ export interface HelmRepo {
   // task
   insertTask(task: Task): Promise<void>;
   updateTask(id: string, updates: TaskUpdate): Promise<void>;
+  findTasksByProject?(projectId: string, limit: number): Promise<Task[]>;
 
   // tech_debt
   insertDebt(debt: TechDebt): Promise<void>;

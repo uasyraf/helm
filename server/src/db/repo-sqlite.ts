@@ -45,6 +45,17 @@ export function makeSqliteRepo(db: Db): HelmRepo {
         .limit(1);
       return rows[0] ?? null;
     },
+    async findDeveloperByOidcSub(projectId, oidcSub) {
+      const rows = await db
+        .select()
+        .from(developer)
+        .where(and(eq(developer.projectId, projectId), eq(developer.oidcSub, oidcSub)))
+        .limit(1);
+      return rows[0] ?? null;
+    },
+    async setDeveloperOidcSub(id, oidcSub) {
+      await db.update(developer).set({ oidcSub }).where(eq(developer.id, id));
+    },
     async insertDeveloper(row) {
       await db.insert(developer).values(row);
     },
@@ -166,6 +177,23 @@ export function makeSqliteRepo(db: Db): HelmRepo {
     },
     async updateTask(id, updates: TaskUpdate) {
       await db.update(task).set(updates).where(eq(task.id, id));
+    },
+    async findTasksByProject(projectId, limit) {
+      const rows = await db
+        .select({
+          id: task.id,
+          storyId: task.storyId,
+          assigneeId: task.assigneeId,
+          title: task.title,
+          status: task.status,
+          blockedBy: task.blockedBy,
+          createdAt: task.createdAt,
+        })
+        .from(task)
+        .innerJoin(story, eq(task.storyId, story.id))
+        .where(eq(story.projectId, projectId))
+        .limit(limit);
+      return rows;
     },
 
     async insertDebt(row) {

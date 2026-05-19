@@ -9,6 +9,7 @@ import { makePgRepo } from "$helm/db/repo-pg.js";
 import { bootstrap } from "$helm/db/bootstrap.js";
 import { bootstrapPg } from "$helm/db/pg-bootstrap.js";
 import type { HelmRepo } from "$helm/db/repo.js";
+import { makeRemoteHelmRepo } from "./remote-repo.js";
 
 let cached: HelmRepo | null = null;
 
@@ -26,6 +27,13 @@ export function defaultSlug(): string | null {
 
 export async function repo(): Promise<HelmRepo> {
   if (cached) return cached;
+
+  const helmUrl = process.env.HELM_URL;
+  if (helmUrl) {
+    cached = makeRemoteHelmRepo({ baseUrl: helmUrl, token: process.env.HELM_TOKEN });
+    return cached;
+  }
+
   const dbUrl = process.env.HELM_DB_URL ?? "";
 
   if (dbUrl.startsWith("postgres://") || dbUrl.startsWith("postgresql://")) {

@@ -28,6 +28,7 @@ export interface EmitArgs {
   kind: EventKind;
   refId?: string | null;
   summary: string;
+  userSub?: string | null;
 }
 
 export async function emitEvent(repo: HelmRepo, args: EmitArgs): Promise<void> {
@@ -39,6 +40,7 @@ export async function emitEvent(repo: HelmRepo, args: EmitArgs): Promise<void> {
     kind: args.kind,
     refId: args.refId ?? null,
     summary: args.summary,
+    userSub: args.userSub ?? null,
     ts: now(),
   });
 }

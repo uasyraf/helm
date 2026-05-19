@@ -56,9 +56,12 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "@hono/node-server": "^2.0.3",
     "@libsql/client": "^0.14.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "drizzle-orm": "^0.36.0",
+    "hono": "^4.12.21",
+    "jose": "^6.2.3",
     "zod": "^3.23.0"
   },
   "optionalDependencies": {

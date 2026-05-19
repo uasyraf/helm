@@ -17,6 +17,7 @@ export const developer = pgTable("developer", {
   projectId: text("project_id").notNull().references(() => project.id),
   handle: text("handle").notNull(),
   email: text("email"),
+  oidcSub: text("oidc_sub"),
   lastSeenAt: text("last_seen_at").notNull(),
 });
 
@@ -101,7 +102,13 @@ export const progressEvent = pgTable("progress_event", {
   kind: text("kind").notNull(),
   refId: text("ref_id"),
   summary: text("summary").notNull(),
+  userSub: text("user_sub"),
   ts: text("ts").notNull(),
+});
+
+export const schemaMeta = pgTable("schema_meta", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
 });
 
 export const schema = {
