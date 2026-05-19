@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Phases 0 through 3 shipped 2026-05-18/19. The codebase has: 22-tool MCP server with HTTP transport (bearer auth), Turso embedded-replica sync, **and BYOS Postgres** via a Repository pattern (`HelmRepo` interface with `SqliteHelmRepo` + `PgHelmRepo` implementations); PostToolUse debt scanner sidecar; SvelteKit dashboard (home / debt / sprints / sprint-detail / decisions); 7 slash command skills + Nelson integration addendum; statusline. 40 unit tests passing (41 with `HELM_INTEGRATION=1` against a local sqld; verified by HELM_DB_URL=memory:pglite end-to-end). Multi-dev sync live-verified at 248ms (PRD gate: 10s).
+Phases 0 through 3 shipped 2026-05-18/19; Phase 4a (production-ready hosted surface) shipped 2026-05-20 (v0.2.0). The codebase has: 24-tool MCP server (22 entity tools + `set_active_project` / `list_accessible_projects`) exposed over stdio and HTTP, REST `/v1/*` API alongside `/mcp` in a single process (hono), OIDC JWT auth via `jose` with JWKS cache and per-project authorization from the `helm_projects` claim, RFC 9728 `/.well-known/oauth-protected-resource` for Claude Code's native `/mcp` OAuth flow, multi-tenant (one helm hosts many projects), Turso embedded-replica sync, BYOS Postgres via a Repository pattern (`HelmRepo` interface with `SqliteHelmRepo` + `PgHelmRepo`), `POST /v1/admin/{export,import}` + `helm export/import` CLI for backup/migration, distroless container (~225 MB, port 8080, `/home/nonroot/data` volume), PostToolUse debt scanner sidecar, SvelteKit dashboard with `HELM_URL` remote mode, 7 slash command skills + Nelson integration addendum, statusline. 82 unit + integration + e2e tests passing.
 
-The product is **self-hosted on its own data** — open `helm dashboard` and the killer metric is live. `npm publish --dry-run` produces a clean 457 KB tarball; ready to publish when the user is.
+The product is **self-hosted on its own data** — open `helm dashboard` and the killer metric is live. `npm publish --dry-run` produces a clean tarball; ready to publish when the user is.
 
-Phase 4 (hosted offering — OAuth, managed instances, marketplace listing) is deferred per PRD § Phased Rollout: "Only if external adoption demands it."
+Phase 4b (managed instances, marketplace listing) is deferred per PRD § Phased Rollout: "Only if external adoption demands it." The OAuth/multi-tenant/container layer that was originally bundled under Phase 4 shipped as Phase 4a.
 
 When asked to "build," "scaffold," or "start," check `git log` and the live codebase first; the PRD is the design conversation, not a frozen spec. Treat `[D]` sections as open for discussion. Resolved open questions are crossed out in PRD § Open Questions with the resolution date.
 
@@ -33,7 +33,7 @@ These are **decided** in PRD v0.3 and should not be revisited without explicit u
 | ORM | Drizzle — single schema targets libSQL + Postgres, shared with dashboard |
 | Dashboard | SvelteKit + Drizzle (Node adapter), reads the same DB the MCP server writes — no tRPC layer |
 | Worker | Bun or Node sidecar for `PostToolUse(Edit|Write)` async work; hook handlers return < 1s |
-| Auth | API key bearer on HTTP endpoint; OAuth 2.1 deferred to Phase 4 |
+| Auth | OIDC JWT (jose + JWKS) with per-project authz via `helm_projects` claim and `helm-admin` role bypass; RFC 9728 discovery for Claude Code's `/mcp` OAuth flow. `HELM_API_TOKEN` static bearer is a legacy fallback (no OIDC); `HELM_AUTH_DISABLED=1` for local dev only. |
 | Local data | SQLite file at `~/.tracker/<project-slug>.db` |
 | Team config | `.tracker/config.json` committed to the repo |
 | Agile model | **Scrumban-lite** — Epic → Story → Task, sprints (default 14d), optional WIP, optional t-shirt sizing |
@@ -105,7 +105,7 @@ Before claiming Phase 0 done, verify all of these (PRD § Verification):
 - **Response schemas at API boundaries** — never expose Drizzle ORM models directly from MCP tools; define explicit DTOs.
 - **Constructor DI throughout** — no service locators, no global state.
 - **MCP tool naming** — verbs prefixed by entity: `open_story`, `move_story`, `close_story`, `log_debt`, `link_mission`, etc. See PRD § MCP tool surface for the full v0.2 list.
-- **One repo = one project** — auto-detect from `git remote get-url origin` on first run.
+- **One repo = one project** in stdio/local mode — auto-detect from `git remote get-url origin` on first run. In remote/OIDC mode one helm instance is multi-tenant; sessions start pending and `set_active_project` binds a slug per MCP session.
 - **Plugin not server** — when adding capabilities, prefer the plugin surface (skill / hook / slash command / statusline) over expanding the MCP tool list.
 
 ## Working with the PRD

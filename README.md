@@ -1,6 +1,6 @@
 # helm
 
-[![tests](https://img.shields.io/badge/tests-40%20passing-brightgreen)](#) [![node](https://img.shields.io/badge/node-22%2B-blue)](#) [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![tests](https://img.shields.io/badge/tests-82%20passing-brightgreen)](#) [![node](https://img.shields.io/badge/node-22%2B-blue)](#) [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Plug-and-play MCP server + dashboard giving Claude Code users **durable, multi-developer project state** — sprints, epics, stories, tasks, and **code-linked tech debt** — surviving across sessions and shared across teammates.
 
@@ -31,13 +31,14 @@ That's it. Open a Claude Code session and the banner appears. Edit a file with a
 
 | Surface | Purpose |
 |---|---|
-| **MCP server** (22 tools) | `get_status`, `open_story`, `move_story`, `close_story`, `log_debt`, `record_decision`, `sprint_review`, ... |
+| **MCP server** (24 tools) | `get_status`, `open_story`, `move_story`, `close_story`, `log_debt`, `record_decision`, `sprint_review`, `set_active_project`, ... |
+| **REST API** (`/v1/*`) | Same surface over HTTP for dashboards, scripts, CI — `GET/POST /v1/projects/{slug}/...` |
 | **Auto-invocable skill** | `project-tracker` routes "what's the sprint status?" and "log this as debt" naturally |
 | **6 slash commands** | `/sprint`, `/story`, `/epic`, `/debt`, `/backlog`, `/review` |
 | **SessionStart banner** | One-line summary at every session start |
 | **Statusline segment** | Same banner pinned to the bottom of the editor |
 | **PostToolUse scanner** | Detects `DEBT(...)` markers, 500-line files, `: any` introductions automatically |
-| **Dashboard** | SvelteKit app — home (killer metric, top debt, events), debt board, sprints (velocity), sprint detail, decisions (ADR-lite) |
+| **Dashboard** | SvelteKit app — home (killer metric, top debt, events), debt board, sprints (velocity), sprint detail, decisions (ADR-lite). Solo: direct DB; team: `HELM_URL` → REST. |
 | **Nelson integration** | Standing-orders addendum for Step 3 (`link_mission`) and Step 7 (`log_progress`) |
 
 ## DEBT marker syntax
@@ -80,12 +81,38 @@ helm dashboard --dev    # vite HMR
 
 The home view surfaces the debt delta prominently. Sprint pages show velocity bars and per-sprint timelines. Debt board has open/closed filters. Decisions page is the ADR log.
 
-## HTTP team mode
+## Hosted mode (Docker + OIDC)
+
+For team or production deployment, helm ships as a multi-stage distroless container (~225 MB) exposing both `/mcp` and `/v1/*` on port 8080, with OIDC JWT validation against any RFC 9728-compatible issuer (Keycloak, Auth0, etc).
+
+```bash
+docker build -t helm:dev .
+docker run -d --name helm -p 8080:8080 \
+  -v helm-data:/home/nonroot/data \
+  -e HELM_OIDC_ISSUER=https://keycloak.example.com/realms/helm \
+  -e HELM_OIDC_AUDIENCE=helm \
+  -e HELM_PUBLIC_URL=https://helm.example.com \
+  helm:dev
+```
+
+Highlights:
+
+- **OIDC JWT auth** via `jose` with JWKS cache; per-project authorization from the `helm_projects` claim; `helm-admin` role bypasses the project filter and unlocks `/v1/admin/*`.
+- **RFC 9728** `/.well-known/oauth-protected-resource` + `WWW-Authenticate` challenges — Claude Code's native `/mcp` OAuth flow Just Works.
+- **Multi-tenant** — one helm instance hosts many projects. Remote MCP sessions start pending; the model calls `set_active_project({slug})` once per session. Provision new projects via `POST /v1/projects` (admin).
+- **Postgres backend** — set `HELM_DB_URL=postgres://...` to skip the SQLite volume entirely.
+- **Backup / migrate** — `POST /v1/admin/export` and `POST /v1/admin/import` JSON snapshots; same flow via `helm export --remote <url> --token <jwt>` and `helm import --remote ...`.
+- **Dashboard remote mode** — set `HELM_URL` (+ `HELM_TOKEN` if OIDC is on) and the dashboard switches to `RemoteHelmRepo` over REST.
+
+Local-dev shortcut: `-e HELM_AUTH_DISABLED=1` bypasses OIDC entirely (treats every caller as admin — never set this in production).
+
+Legacy single-process bearer mode is still available for solo HTTP usage:
 
 ```bash
 HELM_API_TOKEN=secret helm serve --http --port 4500
-# /health returns 200; /mcp accepts bearer-authenticated MCP sessions
 ```
+
+Full env table, Keycloak realm contract, and redirect-URI spec: see **[HANDOFF.md](HANDOFF.md)**. Architecture trade-offs: **[DECISIONS.md](DECISIONS.md)**.
 
 ## Boundary with claude-mem and TodoWrite
 
@@ -107,7 +134,8 @@ If unsure: durable + shared = helm. Per-session + personal = TodoWrite. Conversa
 | 1b — SvelteKit dashboard | ✓ shipped |
 | 2 — HTTP transport, Turso sync, BYOS Postgres data layer | ✓ shipped |
 | 3 — Slash commands, statusline, Nelson integration, decisions view | ✓ shipped |
-| 4 — Hosted (OAuth, managed instances, marketplace) | deferred — gated on external demand |
+| 4a — REST `/v1`, OIDC auth, multi-tenant, container | ✓ shipped (v0.2.0) |
+| 4b — Managed instances, marketplace listing | deferred — gated on external demand |
 
 See `docs/PRD.md` for the full design conversation.
 

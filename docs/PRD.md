@@ -1,6 +1,8 @@
-# Project Tracker MCP — PRD (v0.4)
+# helm — PRD (v0.5)
 
-> Status: settled design. All 15 open questions resolved (see § Open Questions). Phases 0 + 1 shipped. Phase 2+ still discussion-open, but the v1 product shape is locked.
+> Status: settled design. All 15 open questions resolved (see § Open Questions). Phases 0 → 4a shipped (v0.2.0 on 2026-05-20); Phase 4b (managed instances, marketplace) deferred pending external-adoption demand.
+
+> **v0.5 changes (2026-05-20)**: Phase 4a shipped — REST `/v1/*` (hono) co-located with `/mcp` in a single process, OIDC JWT auth (jose + JWKS), RFC 9728 protected-resource discovery for Claude Code's native `/mcp` OAuth flow, multi-tenant runtime (`set_active_project` per MCP session, `POST /v1/projects` admin provisioning), `helm export/import` + `/v1/admin/{export,import}` for backup/migration, distroless container image (~225 MB, port 8080), dashboard `HELM_URL` remote mode. Architecture trade-offs recorded in [DECISIONS.md](../DECISIONS.md); infra contract in [HANDOFF.md](../HANDOFF.md). Phase 4 split into 4a (shipped) and 4b (deferred).
 
 > **v0.4 changes**: all open questions resolved (Q3 sprint length 2w, Q5 task/TodoWrite boundary confirmed, Q6 dashboard auth path, Q7 LWW conflict semantics, Q8 public dashboard deferred, Q10 solo daily-driver, Q11 zero telemetry, Q12 t-shirts default, Q14 monorepo override, Q15 no-git auto-name). v1 design now load-bearing.
 
@@ -53,7 +55,7 @@ Override knobs (project-level config): sprint length, WIP limits, estimation on/
 | Primary | Claude Code power user (solo or 2–5 dev team) | Zero-config first run, native integration, no devops |
 | Secondary | Small team (5–20 devs) on shared monorepo | Sync server, dashboard, role awareness |
 | Tertiary | OSS project maintainer | Public read-only dashboard, contributor tracking |
-| Non-target (v1) | Enterprise (50+ devs, compliance, SSO) | Defer until Phase 4 |
+| Non-target (v1) | Enterprise (50+ devs, formal compliance certifications, SAML/SCIM) | OIDC SSO shipped in 4a; SAML, SCIM provisioning, and compliance attestations stay in 4b |
 
 ## Non-Goals
 
@@ -188,13 +190,15 @@ Coexist by picking different worker ports (`37800 + uid % 100` vs claude-mem's `
 | Layer | Choice | Why |
 |---|---|---|
 | Language | TypeScript (Node 22+) | Best MCP SDK, shared types with dashboard |
-| Distribution | npm, `npx -y @uasyraf/helm` | Lowest friction; uvx needs `uv` install, Docker needs daemon |
-| Transport | Dual-mode: stdio default, `--http` flag for team server | One binary, same backend; matches official servers |
-| Storage | libSQL (Turso) default, Postgres optional | Embedded replicas = microsecond reads + optional sync; Drizzle abstracts both |
+| Distribution | npm (`npx -y @uasyraf/helm`) + distroless container image | npm is the solo/team path; container is the hosted/production path. One binary builds both. |
+| Transport | Tri-mode: stdio default, HTTP single-process exposing `/mcp` (Streamable HTTP, JSON-RPC) + `/v1/*` REST (hono) | One process, shared auth middleware; REST for dashboards/scripts/CI, MCP for Claude Code |
+| Storage | libSQL (Turso) default, Postgres optional | Embedded replicas = microsecond reads + optional sync; Drizzle abstracts both; Repository pattern (`HelmRepo` + `SqliteHelmRepo` / `PgHelmRepo`) |
 | ORM | Drizzle | Single schema → libSQL + Postgres; shared with dashboard |
-| Dashboard | SvelteKit + Drizzle, Node adapter | Embeddable, standalone-deployable, direct DB access (no tRPC ceremony) |
-| Auth | API key bearer on HTTP endpoint; OAuth deferred | Spec mandates OAuth only for public remote endpoints; BYOS exempt |
-| Worker | Bun or Node sidecar process | Hook handlers must return < 1s; async heavy work |
+| Dashboard | SvelteKit + Node adapter; direct Drizzle for solo, `RemoteHelmRepo` over REST when `HELM_URL` is set | Solo keeps zero-ceremony local read; team mode runs a dashboard pod that knows only the REST URL |
+| Auth | OIDC JWT (jose + JWKS cache) with per-project authz via `helm_projects` claim; `helm-admin` role bypass for admin endpoints. RFC 9728 `/.well-known/oauth-protected-resource` + `WWW-Authenticate` challenges for Claude Code's native `/mcp` OAuth flow. Static `HELM_API_TOKEN` is a legacy fallback; `HELM_AUTH_DISABLED=1` for local dev only. | OAuth 2.1 in Claude Code removed the previously-feared OIDC friction; one process serves both authenticated REST and authenticated MCP without a separate gateway. |
+| Tenancy | Stdio/local: one repo = one project (auto-detect). HTTP/OIDC: multi-tenant; MCP sessions start pending, `set_active_project({slug})` binds the session; REST routes scope by `/v1/projects/{slug}/...`. | Server-side cwd is `/app` in container — guessing project from filesystem is wrong; explicit slug from the model or the URL is right. |
+| Container | Multi-stage: `node:22-alpine` builder → `gcr.io/distroless/nodejs22-debian12:nonroot` final. Port 8080. Data volume `/home/nonroot/data`. ~225 MB. | Smallest credible Node base with a non-root default user; logs to stdout for CloudWatch/OTLP collectors. |
+| Worker | Node sidecar process | Hook handlers must return < 1s; async heavy work (debt scanning) |
 
 ### Data model (v0.2, 9 tables)
 
@@ -222,7 +226,7 @@ Conventions (per project CLAUDE.md):
 - Bounded contexts: Sprint/Epic/Story/Task is the "Planning" context; TechDebt is the "Quality" context; Decision is the "Architecture" context; ProgressEvent is the "Audit" context
 - Constructor DI throughout, no service locators
 
-### MCP tool surface (v0.2)
+### MCP tool surface (v0.3, 24 tools)
 
 | Tool | Purpose |
 |---|---|
@@ -238,8 +242,10 @@ Conventions (per project CLAUDE.md):
 | `link_mission` | Nelson seam |
 | `who_did_what` | Developer activity query |
 | `sprint_review` | Sprint summary: completed stories, velocity, debt delta |
+| `set_active_project` | (HTTP/OIDC) Bind the MCP session to a project slug. Required first call before any other tool on remote sessions. Stdio sessions skip this. |
+| `list_accessible_projects` | (HTTP/OIDC) Returns the projects available to the caller based on the `helm_projects` JWT claim (or all projects when the caller has `helm-admin`). |
 
-All response schemas are explicit DTOs.
+All response schemas are explicit DTOs. Tools other than `set_active_project` and `list_accessible_projects` return `{ error: { code: "NO_ACTIVE_PROJECT" } }` on remote sessions until a slug is bound.
 
 ## Integration Surface
 
@@ -315,6 +321,24 @@ npx @uasyraf/helm install-skills  # symlinks skills/ into ~/.claude/skills/
 
 Trades a single-line `/plugin install` for three commands. Same runtime behavior. The `install-hooks` and `install-skills` subcommands are bundled with the npm package so this path is always available.
 
+**Hosted / container install (Phase 4a, since v0.2.0)**
+
+For teams who want a central helm instance behind an OAuth issuer:
+
+```bash
+docker build -t helm:dev .   # or pull a published image once one exists
+docker run -d -p 8080:8080 \
+  -v helm-data:/home/nonroot/data \
+  -e HELM_OIDC_ISSUER=https://keycloak.example.com/realms/helm \
+  -e HELM_OIDC_AUDIENCE=helm \
+  -e HELM_PUBLIC_URL=https://helm.example.com \
+  helm:dev
+```
+
+Claude Code points at it with `claude mcp add helm --transport http https://helm.example.com/mcp` — the RFC 9728 challenge returned on the first unauthenticated request triggers Claude Code's interactive OAuth/PKCE login against the configured Keycloak realm. Subsequent MCP sessions are authenticated by the resulting JWT and authorized by the `helm_projects` claim. See [HANDOFF.md](../HANDOFF.md) for the full Keycloak realm contract (clients, redirect URIs, claim mappers, env table).
+
+`POST /v1/projects` (admin) provisions new tenants without `cwd` detection. `POST /v1/admin/{export,import}` (and the CLI shells `helm export --remote URL --token JWT` / `helm import --remote ...`) move state in and out for backup, migration, or seeding from a phase-0 local install.
+
 ## Phased Rollout
 
 | Phase | Scope | Done when |
@@ -325,9 +349,10 @@ Trades a single-line `/plugin install` for three commands. Same runtime behavior
 | **2 — Multi-dev** ✓ shipped 2026-05-18/19 | HTTP transport (`helm serve --http`, bearer auth, `/health`), Turso embedded-replica sync, `helm init --team`, BYOS Postgres via the **Repository pattern**: `HelmRepo` interface with `SqliteHelmRepo` + `PgHelmRepo` implementations, dispatched on URL scheme (`postgres://...` → pg, otherwise libsql). Every tool, the worker, the banner, and the dashboard consume the same `HelmRepo` interface. | `/health` returns 200; two-dev sync verified against local sqld in 248ms (PRD gate: 10s); BYOS Postgres verified end-to-end through MCP tools against pglite (`open_story` + `log_debt` + `get_status` returns correct delta). All 22 tools schema-agnostic. |
 | **3 — Plugin polish** ✓ shipped 2026-05-18 | 6 slash command skills (`/sprint`, `/story`, `/epic`, `/debt`, `/backlog`, `/review`) + `nelson-integration` skill (Step 3/7 standing-orders addendum). Statusline segment wired via `install-hooks`. `/decisions` dashboard route. Velocity chart already shipped in Phase 1b. | All four integration touchpoints live (skill, SessionStart, PostToolUse, Nelson). `install-hooks` wires hooks + statusline; `install-skills` symlinks all 8 skills. |
 | **3.5 — Publish-readiness** ✓ shipped 2026-05-18 | README, LICENSE, `dashboard/build` bundled into npm `files`, `npm pkg fix` applied. `npm publish --dry-run` produces a clean 457 KB tarball with the `helm` bin entry preserved. | `npm publish --dry-run` exits 0 with no warnings; bin path resolves; tarball contains `dist/`, `skills/`, `hooks/`, `.claude-plugin/`, `.mcp.json`, `dashboard/build/`, `LICENSE`, `README.md` |
-| **4 — Hosted (optional)** | OAuth 2.1, managed instances, marketplace listing | Only if external adoption demands it |
+| **4a — Production-ready hosted surface** ✓ shipped 2026-05-20 (v0.2.0) | Single-process server exposes `/v1/*` REST (hono) alongside `/mcp` (Streamable HTTP). OIDC JWT auth via `jose` with JWKS cache; per-project authz from `helm_projects` claim; `helm-admin` role bypass. RFC 9728 `/.well-known/oauth-protected-resource` + `WWW-Authenticate` for Claude Code's native `/mcp` OAuth flow. Multi-tenant: MCP sessions start pending; `set_active_project` + `list_accessible_projects` tools; `POST /v1/projects` admin provisioning. Additive schema: `developer.oidc_sub`, `progress_event.user_sub`, `schema_meta(version=2)`; idempotent migrations on SQLite + pg; identity merge backfills `oidc_sub` on existing handles. Export/import: `POST /v1/admin/{export,import}` + `helm export/import` CLI (local or `--remote URL --token`). Distroless container (`node:22-alpine` → `gcr.io/distroless/nodejs22-debian12:nonroot`, port 8080, `/home/nonroot/data` volume, ~225 MB). `HELM_DATA_DIR` env for container-friendly paths. Dashboard `HELM_URL` switches to `RemoteHelmRepo`. `project-tracker` SKILL.md teaches first-turn `set_active_project` on remote mode. Architecture trade-offs and decisions captured in [DECISIONS.md](../DECISIONS.md); infra contract (env table, Keycloak realm, redirect URIs, claims spec) in [HANDOFF.md](../HANDOFF.md). | 82 tests pass (51 → 82); new suites cover REST routes, OIDC JWT validation, per-project authz, active-project gating, schema additive migration, export/import roundtrip, and e2e against the built binary with a real JWT. Container boot serves `/healthz` 200 with persisted volume across restart. |
+| **4b — Managed offering** | Managed instances, marketplace listing, dashboard PKCE login, public dashboards (`--public`) for OSS projects | Only if external adoption demands it |
 
-Phase 0 is one weekend for one dev. Phase 1 validates the wedge before any infrastructure commitment.
+Phase 0 is one weekend for one dev. Phase 1 validates the wedge before any infrastructure commitment. Phase 4a closes the gap between "one dev's laptop" and "deployable behind any OIDC issuer" — what remains in 4b is hosted-as-a-service product surface, not infrastructure capability.
 
 ## Success Metrics `[D]`
 
@@ -345,7 +370,7 @@ To define explicitly:
 |---|---|---|
 | Linear ships code-linked debt | Linear changelog mentions code parsing | Pivot to deeper agent-native angle |
 | Backlog.md adds sprints + workload | Backlog.md v2 release | Consider partnering or contributing instead of competing |
-| MCP enterprise auth lands (SEP-1686) | MCP 2026 roadmap update | Open Phase 4 hosted offering |
+| ~~MCP enterprise auth lands (SEP-1686)~~ | ~~MCP 2026 roadmap update~~ | ~~Open Phase 4 hosted offering~~ — **resolved 2026-05-20**: Claude Code's native `/mcp` OAuth flow shipped; Phase 4a delivered OIDC + RFC 9728 + multi-tenant in v0.2.0. |
 | CodeScene / Faros API maturity | Either ships public API | Call their hotspot analysis instead of replicating |
 | Plugin model deprecated | Anthropic announcement | Bundled `install-hooks` / `install-skills` subcommands provide a 3-command fallback path (see Distribution & Install UX § Fallback install). Plugin status changes from "single-line install" to "3-line install" — degradation, not breakage. |
 | Agile model too opinionated | User complaints about forced sprints | Add "flow mode" (Kanban only, no sprints) as project-level switch |
@@ -359,9 +384,9 @@ Re-evaluation cadence: **every 6 months** (next: Nov 2026).
 3. ~~**Sprint length default** — 2 weeks proposed. 1 week for solo devs?~~ **Resolved 2026-05-18: 2 weeks.** Project-level `sprint_length_days` (F1 config) overrides; 1-week solo cadence is a per-project knob, not a fork in the default.
 4. ~~**Auto-rollover** — incomplete stories return to backlog or push to next sprint?~~ **Resolved 2026-05-18**: return to backlog. See § F2 for full spec. Project-level `rollover` override deferred until requested.
 5. ~~**Task vs TodoWrite boundary** — Suggested rule: TodoWrite is per-session decomposition; tracker tasks are durable assignments shared with the team. Confirm.~~ **Resolved 2026-05-18: confirmed.** TodoWrite = ephemeral, per-session. helm `task` = durable, team-shared implementation step inside a story. project-tracker skill explicitly enforces this routing.
-6. ~~**Dashboard auth (team mode)** — shared link, API token, magic link, full SSO later?~~ **Resolved 2026-05-18: API token bearer (Phase 2); magic link in Phase 3; SSO/OIDC deferred to Phase 4.** Mirrors the HTTP transport auth on the MCP side. Local dashboard (no `--http` mode) stays localhost-only, no auth.
+6. ~~**Dashboard auth (team mode)** — shared link, API token, magic link, full SSO later?~~ **Resolved 2026-05-18 / superseded 2026-05-20**: phase-2 shipped API token bearer; phase-4a (v0.2.0) replaces it with OIDC JWT validated by the same `jose` + JWKS path that authorizes `/mcp` and `/v1/*`. Dashboard in team mode reads `HELM_URL` + `HELM_TOKEN` (service-account JWT) and proxies via `RemoteHelmRepo`. Static `HELM_API_TOKEN` is preserved as a legacy fallback for solo HTTP usage. Local dashboard (no `--http`) stays localhost-only with no auth. Interactive PKCE login for human dashboard viewers is the only remaining piece, deferred to 4b (operators behind a reverse proxy with Keycloak SSO get this for free today).
 7. ~~**Sync conflict semantics** — Turso handles it transparently for the append-only event log. For `story.status` updates, last-write-wins or vector-clock? Pragmatic answer: LWW for v1, revisit if it bites.~~ **Resolved 2026-05-18: LWW for v1.** Append-only events stay conflict-free by construction. Mutable rows take last-write-wins. Revisit (vector clocks / CRDTs) only if a real team reports a bite.
-8. ~~**Public dashboard for OSS** — separate feature or just "team mode with `--public` flag"?~~ **Resolved 2026-05-18: deferred to Phase 4.** Not in v1 scope. When demand surfaces, ship as `--public` flag on team mode, read-only routes only, opt-in per project.
+8. ~~**Public dashboard for OSS** — separate feature or just "team mode with `--public` flag"?~~ **Resolved 2026-05-18: deferred to Phase 4b.** Not in v1 scope. When demand surfaces, ship as `--public` flag on team mode, read-only routes only, opt-in per project.
 9. ~~**License** — MIT, Apache 2.0, or AGPL (to discourage SaaS clones)?~~ **Resolved 2026-05-18: MIT.** Viral-friendly; quality is the moat, not the license.
 10. ~~**First user / design partner** — who's the Phase 0 daily driver?~~ **Resolved 2026-05-18: solo (ummar@artiselite.net).** Broader design-partner search starts after npm publish. helm is currently tracking its own development in `~/.helm/helm.db` — Phase 0 daily-driver gate is met by the project itself.
 11. ~~**Telemetry** — opt-in anonymous usage data, or none ever?~~ **Resolved 2026-05-18: none ever.** Hard no on phone-home. helm collects nothing, sends nothing. Re-evaluate only if reach ever genuinely matters more than trust — unlikely for a Claude-Code-adjacent tool.
@@ -398,9 +423,19 @@ Re-evaluation cadence: **every 6 months** (next: Nov 2026).
 - `/plugin install helm` registers all hooks, skills, statusline
 - Nelson Tier 3 mission completes → corresponding `progress_event` rows with `kind=mission.linked` and `kind=mission.logged` appear in dashboard timeline
 
+**Phase 4a acceptance** (shipped 2026-05-20)
+
+- `docker build -t helm:dev .` produces a ~225 MB image; `docker run -p 8080:8080 -v helm-data:/home/nonroot/data -e HELM_AUTH_DISABLED=1 helm:dev` serves `GET /healthz` 200
+- Container restart preserves state in the mounted volume
+- With OIDC env set, an unauthenticated `POST /mcp` returns `401` with `WWW-Authenticate: Bearer ... resource_metadata=...` — Claude Code's interactive `/mcp` login completes against Keycloak and subsequent calls succeed
+- A token without the requested slug in `helm_projects` is rejected at `set_active_project` with `FORBIDDEN`; a token with `helm-admin` can `set_active_project` to any slug and reach `/v1/admin/*`
+- `POST /v1/admin/export` followed by container wipe + `POST /v1/admin/import` restores every table (verified via story status)
+- Two distinct OIDC subjects with the same handle merge to one `developer` row on first authenticated write (`oidc_sub` backfill)
+- Dashboard with `HELM_URL=https://helm.example.com HELM_TOKEN=$JWT` renders the same home view that direct-Drizzle mode would
+
 ## Out of Scope (v1)
 
-- SSO / SAML / SCIM
+- ~~SSO / SAML / SCIM~~ — **OIDC shipped in 4a** (Keycloak, Auth0, any RFC 9728 issuer); SAML and SCIM provisioning remain out of scope
 - Custom workflow engines, automation triggers, webhooks
 - Mobile apps
 - Realtime collaboration (CRDT, presence cursors)
