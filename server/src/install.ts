@@ -29,6 +29,10 @@ const HELM_SESSION_START_TAG = "# helm: SessionStart";
 const HELM_POST_TOOL_USE_TAG = "# helm: PostToolUse";
 const HELM_STATUSLINE_TAG = "# helm: statusline";
 
+function isHelmStatusLine(s: StatusLineSetting | undefined): boolean {
+  return Boolean(s && s.command.includes(HELM_STATUSLINE_TAG));
+}
+
 function packageRoot(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   let dir = here;
@@ -82,13 +86,9 @@ export function installHooks(settingsPath: string = join(homedir(), ".claude", "
     installed.push("PostToolUse");
   }
 
-  if (!existing.statusLine || !existing.statusLine.command.includes(HELM_STATUSLINE_TAG)) {
-    existing.statusLine = {
-      type: "command",
-      command: `npx -y @uasyraf/helm banner 2>/dev/null ${HELM_STATUSLINE_TAG}`,
-      padding: 0,
-    };
-    installed.push("statusLine");
+  if (isHelmStatusLine(existing.statusLine)) {
+    delete existing.statusLine;
+    installed.push("statusLine:removed");
   }
 
   if (installed.length > 0) {

@@ -31,6 +31,7 @@ export const registerStoryTools: ToolRegistrar = (server, ctx) => {
       const initialStatus = args.sprintId ? "todo" : "backlog";
       await repo.insertStory({
         id,
+        projectId: session.project.id,
         epicId: args.epicId ?? null,
         sprintId: args.sprintId ?? null,
         title: args.title,

@@ -41,6 +41,7 @@ const STATEMENTS: readonly string[] = [
   )`,
   `CREATE TABLE IF NOT EXISTS story (
     id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES project(id),
     epic_id TEXT REFERENCES epic(id),
     sprint_id TEXT REFERENCES sprint(id),
     title TEXT NOT NULL,
@@ -98,11 +99,29 @@ const STATEMENTS: readonly string[] = [
   `CREATE INDEX IF NOT EXISTS idx_progress_event_ts ON progress_event(ts DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_story_sprint ON story(sprint_id)`,
   `CREATE INDEX IF NOT EXISTS idx_story_status ON story(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_story_project ON story(project_id)`,
   `CREATE INDEX IF NOT EXISTS idx_tech_debt_closed ON tech_debt(closed_at)`,
 ];
+
+async function ensureStoryProjectColumn(client: Client): Promise<void> {
+  const info = await client.execute("PRAGMA table_info(story)");
+  const hasProject = info.rows.some((r) => String(r.name) === "project_id");
+  if (hasProject) return;
+  await client.execute("ALTER TABLE story ADD COLUMN project_id TEXT REFERENCES project(id)");
+  await client.execute(`
+    UPDATE story SET project_id = COALESCE(
+      (SELECT s.project_id FROM sprint s WHERE s.id = story.sprint_id),
+      (SELECT e.project_id FROM epic e WHERE e.id = story.epic_id),
+      (SELECT p.id FROM project p ORDER BY p.created_at LIMIT 1)
+    )
+    WHERE project_id IS NULL
+  `);
+  await client.execute("CREATE INDEX IF NOT EXISTS idx_story_project ON story(project_id)");
+}
 
 export async function bootstrap(client: Client): Promise<void> {
   for (const sql of STATEMENTS) {
     await client.execute(sql);
   }
+  await ensureStoryProjectColumn(client);
 }

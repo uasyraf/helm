@@ -6,6 +6,8 @@ import { schema } from "$helm/db/schema.js";
 import { schema as pgSchema } from "$helm/db/schema-pg.js";
 import { makeSqliteRepo } from "$helm/db/repo-sqlite.js";
 import { makePgRepo } from "$helm/db/repo-pg.js";
+import { bootstrap } from "$helm/db/bootstrap.js";
+import { bootstrapPg } from "$helm/db/pg-bootstrap.js";
 import type { HelmRepo } from "$helm/db/repo.js";
 
 let cached: HelmRepo | null = null;
@@ -14,12 +16,12 @@ function helmHome(): string {
   return process.env.HELM_HOME ?? join(homedir(), ".helm");
 }
 
-export function activeSlug(): string {
-  const slug = process.env.HELM_PROJECT_SLUG;
-  if (!slug) {
-    throw new Error("HELM_PROJECT_SLUG not set — start the dashboard via `helm dashboard`.");
-  }
-  return slug;
+function unifiedDbPath(): string {
+  return process.env.HELM_DB_PATH ?? join(helmHome(), "helm.db");
+}
+
+export function defaultSlug(): string | null {
+  return process.env.HELM_PROJECT_SLUG ?? null;
 }
 
 export async function repo(): Promise<HelmRepo> {
@@ -32,19 +34,15 @@ export async function repo(): Promise<HelmRepo> {
       import("drizzle-orm/node-postgres"),
     ]);
     const pool = new Pool({ connectionString: dbUrl });
+    await bootstrapPg({ query: async (sql) => { await pool.query(sql); } });
     const pg = drizzle(pool, { schema: pgSchema });
     cached = makePgRepo(pg);
     return cached;
   }
 
-  const slug = activeSlug();
-  const path = join(helmHome(), `${slug}.db`);
-  const syncUrl = process.env.HELM_SYNC_URL;
-  const syncToken = process.env.HELM_SYNC_TOKEN;
-  const syncIntervalSec = Number(process.env.HELM_SYNC_INTERVAL_MS ?? "5000") / 1000;
-  const client = syncUrl
-    ? createClient({ url: `file:${path}`, syncUrl, authToken: syncToken, syncInterval: syncIntervalSec })
-    : createClient({ url: `file:${path}` });
+  const path = unifiedDbPath();
+  const client = createClient({ url: `file:${path}` });
+  await bootstrap(client);
   const drizzled = drizzleLibsql(client, { schema });
   cached = makeSqliteRepo(drizzled);
   return cached;

@@ -9,6 +9,7 @@ export type StatusCounts = Record<string, number>;
 export interface HelmRepo {
   // project
   findProjectBySlug(slug: string): Promise<Project | null>;
+  findAllProjects(): Promise<Project[]>;
   insertProject(project: Project): Promise<void>;
 
   // developer

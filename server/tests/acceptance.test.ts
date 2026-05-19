@@ -138,6 +138,7 @@ describe("story lifecycle", () => {
     const storyId = newId();
     await repo.insertStory({
       id: storyId,
+      projectId,
       epicId: null,
       sprintId: null,
       title: "Test story",
@@ -228,6 +229,7 @@ describe("sprint rollover (Q4 locked: return to backlog)", () => {
     const doneId = newId();
     const droppedId = newId();
     const base = {
+      projectId: f.session.project.id,
       epicId: null,
       description: null,
       acceptance: null,

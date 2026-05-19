@@ -87,6 +87,33 @@ header.nav nav a.active {
   color: var(--fg);
 }
 
+header.nav select {
+  margin-left: auto;
+  background: var(--card);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.subnav {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.subnav a {
+  color: var(--muted);
+}
+
+.subnav a.active {
+  color: var(--fg);
+  font-weight: 600;
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);

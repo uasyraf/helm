@@ -30,6 +30,9 @@ export function makeSqliteRepo(db: Db): HelmRepo {
       const rows = await db.select().from(project).where(eq(project.slug, slug)).limit(1);
       return rows[0] ?? null;
     },
+    async findAllProjects() {
+      return db.select().from(project).orderBy(project.name);
+    },
     async insertProject(row) {
       await db.insert(project).values(row);
     },
@@ -129,7 +132,7 @@ export function makeSqliteRepo(db: Db): HelmRepo {
       return db
         .select()
         .from(story)
-        .where(and(isNull(story.sprintId), eq(story.status, "backlog")))
+        .where(and(eq(story.projectId, projectId), isNull(story.sprintId), eq(story.status, "backlog")))
         .orderBy(sql`priority asc, created_at asc`)
         .limit(limit);
     },
@@ -147,7 +150,7 @@ export function makeSqliteRepo(db: Db): HelmRepo {
       const rows = await db
         .select({ c: sql<number>`count(*)` })
         .from(story)
-        .where(and(eq(story.status, "backlog"), isNull(story.sprintId)));
+        .where(and(eq(story.projectId, projectId), eq(story.status, "backlog"), isNull(story.sprintId)));
       return rows[0]?.c ?? 0;
     },
     async countDoneStoriesInSprint(sprintId) {

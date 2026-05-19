@@ -8,8 +8,9 @@ import { runPostToolUseHook } from "../server/src/worker/hook.js";
 import { runDashboard } from "../server/src/dashboard.js";
 import { startHttpServer } from "../server/src/http/server.js";
 import { runInit } from "../server/src/init.js";
+import { runMigrate } from "../server/src/migrate.js";
 
-type Command = "serve" | "banner" | "install-hooks" | "install-skills" | "worker" | "hook" | "dashboard" | "init" | "help";
+type Command = "serve" | "banner" | "install-hooks" | "install-skills" | "worker" | "hook" | "dashboard" | "init" | "migrate" | "help";
 
 function parseCommand(argv: readonly string[]): Command {
   const cmd = argv[0];
@@ -23,6 +24,7 @@ function parseCommand(argv: readonly string[]): Command {
     case "hook":
     case "dashboard":
     case "init":
+    case "migrate":
       return cmd;
     case "-h":
     case "--help":
@@ -83,6 +85,20 @@ async function runInitCmd(): Promise<void> {
   }
 }
 
+async function runMigrateCmd(): Promise<void> {
+  const result = await runMigrate();
+  process.stdout.write(`[helm] unified DB: ${result.unifiedPath}\n`);
+  for (const m of result.merged) {
+    process.stdout.write(`[helm] merged ${m.source} (slug=${m.slug}, rows=${m.rowsCopied}) → renamed to ${m.source}.bak\n`);
+  }
+  for (const s of result.skipped) {
+    process.stdout.write(`[helm] skipped ${s.source}: ${s.reason}\n`);
+  }
+  if (result.merged.length === 0 && result.skipped.length === 0) {
+    process.stdout.write("[helm] no legacy per-slug DBs found — nothing to migrate\n");
+  }
+}
+
 async function runBanner(): Promise<void> {
   try {
     const line = await renderBanner();
@@ -126,7 +142,8 @@ function runHelp(): void {
       "  helm hook post-tool-use       hook entry: reads stdin, forwards to worker",
       "  helm dashboard [--dev]        launch the SvelteKit dashboard (built mode or vite dev)",
       "  helm init --team              write .helm/config.json with shared Turso sync URL",
-      "  helm install-hooks            wire SessionStart + PostToolUse + statusline into ~/.claude/settings.json",
+      "  helm migrate                  merge legacy ~/.helm/<slug>.db files into the unified ~/.helm/helm.db",
+      "  helm install-hooks            wire SessionStart + PostToolUse into ~/.claude/settings.json",
       "  helm install-skills           symlink bundled skills/* (project-tracker + 7 slash commands) into ~/.claude/skills/",
       "  helm help                     show this message",
       "",
@@ -156,6 +173,9 @@ async function main(): Promise<void> {
     }
     case "init":
       await runInitCmd();
+      return;
+    case "migrate":
+      await runMigrateCmd();
       return;
     case "install-hooks":
       runInstallHooks();

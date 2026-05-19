@@ -60,7 +60,7 @@
       <tbody>
         {#each data.metrics as m}
           <tr>
-            <td><a href="/sprints/{m.sprintId}" class="mono">{m.name}</a></td>
+            <td><a href="/p/{data.slug}/sprints/{m.sprintId}" class="mono">{m.name}</a></td>
             <td><span class="pill status-{m.status}">{m.status}</span></td>
             <td>{m.storiesDone}/{m.storiesTotal}</td>
             <td class={deltaClass(m.debtDelta)}>{deltaLabel(m.debtDelta)}</td>

@@ -44,6 +44,7 @@ export const epic = pgTable("epic", {
 
 export const story = pgTable("story", {
   id: text("id").primaryKey(),
+  projectId: text("project_id").notNull().references(() => project.id),
   epicId: text("epic_id").references(() => epic.id),
   sprintId: text("sprint_id").references(() => sprint.id),
   title: text("title").notNull(),

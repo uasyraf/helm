@@ -59,6 +59,7 @@ describeIf("multi-dev sync (sqld integration)", () => {
       const storyId = newId();
       await repoA.insertStory({
         id: storyId,
+        projectId: sessionA.project.id,
         epicId: null,
         sprintId: sessionA.activeSprint.id,
         title: "Synced story from dev A",

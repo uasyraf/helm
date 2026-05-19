@@ -14,14 +14,13 @@ describe("installHooks", () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it("writes SessionStart, PostToolUse, and statusLine on a fresh settings.json", () => {
+  it("writes SessionStart and PostToolUse on a fresh settings.json, leaves statusLine alone", () => {
     const result = installHooks(path);
-    expect(result.installed.sort()).toEqual(["PostToolUse", "SessionStart", "statusLine"]);
+    expect(result.installed.sort()).toEqual(["PostToolUse", "SessionStart"]);
     const written = JSON.parse(readFileSync(path, "utf8"));
     expect(written.hooks.SessionStart).toBeDefined();
     expect(written.hooks.PostToolUse).toBeDefined();
-    expect(written.statusLine).toBeDefined();
-    expect(written.statusLine.command).toContain("helm banner");
+    expect(written.statusLine).toBeUndefined();
   });
 
   it("is idempotent — re-running installs nothing", () => {
@@ -30,13 +29,33 @@ describe("installHooks", () => {
     expect(second.installed).toEqual([]);
   });
 
-  it("preserves existing unrelated settings", () => {
-    writeFileSync(path, JSON.stringify({ theme: "dark", hooks: { UserPromptSubmit: [{ matcher: "*", hooks: [] }] } }));
+  it("preserves existing unrelated settings, including a non-helm statusLine", () => {
+    writeFileSync(
+      path,
+      JSON.stringify({
+        theme: "dark",
+        hooks: { UserPromptSubmit: [{ matcher: "*", hooks: [] }] },
+        statusLine: { type: "command", command: "echo user-statusline" },
+      }),
+    );
     installHooks(path);
     const written = JSON.parse(readFileSync(path, "utf8"));
     expect(written.theme).toBe("dark");
     expect(written.hooks.UserPromptSubmit).toBeDefined();
-    expect(written.statusLine).toBeDefined();
+    expect(written.statusLine.command).toBe("echo user-statusline");
+  });
+
+  it("removes a previously-installed helm statusLine, restoring user control", () => {
+    writeFileSync(
+      path,
+      JSON.stringify({
+        statusLine: { type: "command", command: "npx -y @uasyraf/helm banner 2>/dev/null # helm: statusline", padding: 0 },
+      }),
+    );
+    const result = installHooks(path);
+    expect(result.installed).toContain("statusLine:removed");
+    const written = JSON.parse(readFileSync(path, "utf8"));
+    expect(written.statusLine).toBeUndefined();
   });
 });
 

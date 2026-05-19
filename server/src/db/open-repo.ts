@@ -1,6 +1,6 @@
 import { detectProject } from "../project/detect.js";
 import { loadConfig } from "../config/load.js";
-import { dbPathFor } from "../util/paths.js";
+import { unifiedDbPath } from "../util/paths.js";
 import { openDb } from "./client.js";
 import { openPgDb, openPgliteDb } from "./pg-client.js";
 import { makeSqliteRepo } from "./repo-sqlite.js";
@@ -39,7 +39,7 @@ export async function openProjectRepo(cwd: string): Promise<OpenedProjectRepo> {
   }
 
   const config = loadConfig(cwd);
-  const path = dbPathFor(detected.slug);
+  const path = unifiedDbPath();
   const sqlite = await openDb(path, { sync: config.sync });
   return {
     handle: {

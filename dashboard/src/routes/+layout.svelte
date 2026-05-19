@@ -1,36 +1,39 @@
 <script lang="ts">
   import "../app.css";
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
 
   interface Props {
-    data: { project: { slug: string; name: string } };
+    data: { projects: { slug: string; name: string }[]; defaultSlug: string | null };
     children: import("svelte").Snippet;
   }
 
   let { data, children }: Props = $props();
 
-  const links = [
-    { href: "/", label: "Home" },
-    { href: "/debt", label: "Debt" },
-    { href: "/sprints", label: "Sprints" },
-    { href: "/decisions", label: "Decisions" },
-  ];
+  const currentSlug = $derived.by(() => {
+    const m = page.url.pathname.match(/^\/p\/([^/]+)/);
+    return m ? m[1] : "";
+  });
 
-  function isActive(href: string): boolean {
-    if (href === "/") return page.url.pathname === "/";
-    return page.url.pathname.startsWith(href);
+  function onSwitch(event: Event): void {
+    const target = event.currentTarget as HTMLSelectElement;
+    const slug = target.value;
+    if (!slug) return;
+    void goto(`/p/${slug}/`);
   }
 </script>
 
 <div class="layout">
   <header class="nav">
-    <span class="brand">helm</span>
-    <span class="muted mono">{data.project.slug}</span>
-    <nav>
-      {#each links as link}
-        <a href={link.href} class={isActive(link.href) ? "active" : ""}>{link.label}</a>
-      {/each}
-    </nav>
+    <a href="/" class="brand" style="text-decoration: none; color: inherit;">helm</a>
+    {#if data.projects.length > 0}
+      <select class="mono" onchange={onSwitch} value={currentSlug}>
+        <option value="">— pick a project —</option>
+        {#each data.projects as p}
+          <option value={p.slug}>{p.name} ({p.slug})</option>
+        {/each}
+      </select>
+    {/if}
   </header>
   {@render children()}
 </div>

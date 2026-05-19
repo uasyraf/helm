@@ -1,5 +1,5 @@
 import { error } from "@sveltejs/kit";
-import { activeSlug, repo } from "$lib/server/db";
+import { repo } from "$lib/server/db";
 import {
   computeSprintMetric,
   loadEventsForSprint,
@@ -11,9 +11,10 @@ import type { PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ params }) => {
   const r = await repo();
-  await loadProject(r, activeSlug());
+  const project = await loadProject(r, params.slug);
+  if (!project) throw error(404, `No helm project with slug "${params.slug}".`);
   const sprint = await loadSprintById(r, params.id);
-  if (!sprint) throw error(404, `Sprint ${params.id} not found`);
+  if (!sprint || sprint.projectId !== project.id) throw error(404, `Sprint ${params.id} not found`);
   const metric = await computeSprintMetric(r, sprint);
   const stories = await loadStoriesInSprint(r, sprint.id);
   const events = await loadEventsForSprint(r, sprint.id, 100);

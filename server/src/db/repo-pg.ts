@@ -37,6 +37,10 @@ export function makePgRepo(db: PgDb): HelmRepo {
       const rows = await pg.select().from(project).where(eq(project.slug, slug)).limit(1);
       return (rows[0] as Project | undefined) ?? null;
     },
+    async findAllProjects() {
+      const rows = await pg.select().from(project).orderBy(project.name);
+      return rows as Project[];
+    },
     async insertProject(row) {
       await pg.insert(project).values(row);
     },
@@ -149,7 +153,7 @@ export function makePgRepo(db: PgDb): HelmRepo {
       const rows = await pg
         .select()
         .from(story)
-        .where(and(isNull(story.sprintId), eq(story.status, "backlog")))
+        .where(and(eq(story.projectId, projectId), isNull(story.sprintId), eq(story.status, "backlog")))
         .orderBy(sql`priority asc, created_at asc`)
         .limit(limit);
       return rows as Story[];
@@ -168,7 +172,7 @@ export function makePgRepo(db: PgDb): HelmRepo {
       const rows = await pg
         .select({ c: sql<number>`count(*)::int` })
         .from(story)
-        .where(and(eq(story.status, "backlog"), isNull(story.sprintId)));
+        .where(and(eq(story.projectId, projectId), eq(story.status, "backlog"), isNull(story.sprintId)));
       return Number(rows[0]?.c ?? 0);
     },
     async countDoneStoriesInSprint(sprintId) {

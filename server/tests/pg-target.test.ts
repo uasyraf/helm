@@ -65,6 +65,7 @@ describe("Postgres target (pglite)", () => {
     });
     await db.insert(pgSchema.story).values({
       id: storyId,
+      projectId,
       epicId: null,
       sprintId,
       title: "first",
