@@ -25,7 +25,7 @@ COPY skills/ ./skills/
 COPY hooks/ ./hooks/
 COPY .claude-plugin/ ./.claude-plugin/
 COPY .mcp.json ./.mcp.json
-COPY LICENSE README.md ONBOARDING.md ./
+COPY LICENSE README.md ./
 
 # Prune devDependencies for the final image
 RUN npm prune --omit=dev
