@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { RestEnv } from "./context.js";
+import type { RestActor, RestEnv } from "./context.js";
 import { HttpError, toBody } from "./errors.js";
 import { stubAuthMiddleware } from "./stub-auth.js";
 import { buildProjectRoutes } from "./routes-projects.js";
@@ -21,6 +21,20 @@ export interface OAuthProtectedResourceMetadata {
 
 export function buildRestApp(opts: RestAppOptions): Hono<RestEnv> {
   const app = new Hono<RestEnv>();
+
+  app.use("*", async (c, next) => {
+    if (c.req.path === "/healthz") {
+      await next();
+      return;
+    }
+    const start = Date.now();
+    await next();
+    const actor = c.get("actor") as RestActor | undefined;
+    const actorId = actor?.userSub ?? "anonymous";
+    console.log(
+      `[helm-rest] ${c.req.method} ${c.req.path} ${c.res.status} ${Date.now() - start}ms actor=${actorId}`,
+    );
+  });
 
   app.use("*", async (c, next) => {
     c.set("repo", opts.repo);
