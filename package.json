@@ -1,6 +1,6 @@
 {
   "name": "@uasyraf/helm",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Plug-and-play MCP server + dashboard for durable, multi-developer project state. Sprints, epics, stories, tasks, code-linked tech debt.",
   "type": "module",
   "repository": {
