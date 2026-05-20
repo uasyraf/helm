@@ -10,7 +10,7 @@ import { openDb, type DbHandle } from "../src/db/client.js";
 import { makeSqliteRepo } from "../src/db/repo-sqlite.js";
 import { bootstrapSession } from "../src/project/bootstrap.js";
 import { buildRestApp } from "../src/http/rest/app.js";
-import { buildJwks, buildJwtMiddleware, readOidcSettings } from "../src/http/rest/oidc.js";
+import { buildJwks, buildJwtMiddleware, oauthMetadata, readOidcSettings } from "../src/http/rest/oidc.js";
 
 const ISS = "http://127.0.0.1:0/realms/helm";
 const AUD = "helm";
@@ -190,5 +190,19 @@ describe("OIDC JWT middleware", () => {
   it("readOidcSettings returns null when issuer or audience missing", () => {
     expect(readOidcSettings({})).toBeNull();
     expect(readOidcSettings({ HELM_OIDC_ISSUER: "x" })).toBeNull();
+  });
+
+  it("oauthMetadata advertises offline_access in scopes_supported", () => {
+    const meta = oauthMetadata({
+      issuer: "https://auth.example.com/realms/helm",
+      audience: "helm",
+      jwksUrl: "https://auth.example.com/realms/helm/protocol/openid-connect/certs",
+      projectsClaim: "helm_projects",
+      adminRole: "helm-admin",
+      rolesClaimPath: ["realm_access", "roles"],
+      resourceUrl: "https://helm.example.com",
+      required: true,
+    });
+    expect(meta.scopes_supported).toContain("offline_access");
   });
 });

@@ -126,6 +126,15 @@ export function oauthMetadata(settings: OidcSettings): {
     resource: trimEnd(settings.resourceUrl, "/"),
     authorization_servers: [trimEnd(settings.issuer, "/")],
     bearer_methods_supported: ["header"],
-    scopes_supported: ["openid", "profile", "email"],
+    // `offline_access` must be advertised so Claude Code's MCP SDK includes
+    // it in the DCR scope string. Keycloak's DCR endpoint uses the scope
+    // string as a whitelist when attaching realm-level client scopes to the
+    // newly-registered client — if `offline_access` isn't in DCR scope, it
+    // never lands on the client, and the SDK's subsequent /auth request
+    // (which always requests offline_access for refresh-token support) is
+    // rejected with `invalid_scope`. helm genuinely supports refresh tokens
+    // (Keycloak mints them when this scope is granted), so advertising it
+    // here is also semantically correct, not just a workaround.
+    scopes_supported: ["openid", "profile", "email", "offline_access"],
   };
 }
