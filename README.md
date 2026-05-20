@@ -201,7 +201,7 @@ If any of those are missing, see [Troubleshooting](#troubleshooting).
 
 | Surface | Purpose |
 |---|---|
-| **MCP server** (24 tools) | `get_status`, `open_story`, `move_story`, `close_story`, `log_debt`, `record_decision`, `sprint_review`, `set_active_project`, ... |
+| **MCP server** (26 tools) | `get_status`, `open_story`, `move_story`, `close_story`, `log_debt`, `record_decision`, `sprint_review`, `set_active_project`, `create_project`, `join_project`, ... |
 | **REST API** (`/v1/*`) | Same surface over HTTP for dashboards, scripts, CI — `GET/POST /v1/projects/{slug}/...` |
 | **Auto-invocable skill** | `project-tracker` routes "what's the sprint status?" and "log this as debt" naturally |
 | **6 slash commands** | `/sprint`, `/story`, `/epic`, `/debt`, `/backlog`, `/review` |

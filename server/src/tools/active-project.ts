@@ -2,6 +2,11 @@ import { z } from "zod";
 import type { ToolRegistrar } from "./types.js";
 import { jsonResult } from "./types.js";
 import { bootstrapSessionForProject } from "../project/bootstrap.js";
+import {
+  createProject,
+  joinProject,
+  ProjectSlugSchema,
+} from "../project/provisioning.js";
 
 export const registerActiveProjectTools: ToolRegistrar = (server, ctx) => {
   server.registerTool(
@@ -105,6 +110,84 @@ export const registerActiveProjectTools: ToolRegistrar = (server, ctx) => {
       });
     },
   );
+
+  server.registerTool(
+    "create_project",
+    {
+      title: "Create a new project and become its owner",
+      description:
+        "Provision a project on this helm instance. Caller becomes owner via the project_member table. Slug must be 3-64 chars, lowercase [a-z0-9._-], not reserved. Created projects default to open_join=true so teammates can join later.",
+      inputSchema: {
+        slug: ProjectSlugSchema,
+        name: z.string().min(1).optional(),
+        gitRemote: z.string().optional(),
+        sprintLengthDays: z.number().int().positive().optional(),
+      },
+    },
+    async (args) => {
+      const result = await createProject(
+        ctx.repo,
+        { userSub: ctx.identity?.userSub ?? null },
+        args,
+      );
+      if (!result.ok) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: { code: result.code, message: result.message, details: result.details },
+              }),
+            },
+          ],
+        };
+      }
+      return jsonResult({
+        project: { slug: result.value.slug, name: result.value.name },
+        role: "owner",
+        hint: "call set_active_project to bind this session to the new project",
+      });
+    },
+  );
+
+  server.registerTool(
+    "join_project",
+    {
+      title: "Join an open_join project as a member",
+      description:
+        "Add the caller to a project's member table. Project must have open_join=true. Idempotent: calling twice returns alreadyMember=true. Returns FORBIDDEN if the project is not open to join.",
+      inputSchema: {
+        slug: z.string().min(1),
+      },
+    },
+    async (args) => {
+      const result = await joinProject(
+        ctx.repo,
+        { userSub: ctx.identity?.userSub ?? null },
+        args.slug,
+      );
+      if (!result.ok) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: { code: result.code, message: result.message },
+              }),
+            },
+          ],
+        };
+      }
+      return jsonResult(result.value);
+    },
+  );
 };
 
-export const ALWAYS_AVAILABLE_TOOLS = new Set(["set_active_project", "list_accessible_projects"]);
+export const ALWAYS_AVAILABLE_TOOLS = new Set([
+  "set_active_project",
+  "list_accessible_projects",
+  "create_project",
+  "join_project",
+]);
