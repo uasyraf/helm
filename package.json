@@ -1,6 +1,6 @@
 {
   "name": "@uasyraf/helm",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Plug-and-play MCP server + dashboard for durable, multi-developer project state. Sprints, epics, stories, tasks, code-linked tech debt.",
   "type": "module",
   "repository": {
@@ -43,8 +43,7 @@
     "dashboard/package.json",
     "dashboard/svelte.config.js",
     "LICENSE",
-    "README.md",
-    "ONBOARDING.md"
+    "README.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
