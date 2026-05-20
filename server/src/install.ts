@@ -109,7 +109,7 @@ export function installSkills(skillsRoot: string = join(homedir(), ".claude", "s
   const pkgSkillsDir = join(packageRoot(), "skills");
   if (!existsSync(pkgSkillsDir)) return { installed: [], skipped: [] };
 
-  const skills = ["project-tracker", "sprint", "story", "epic", "debt", "backlog", "review", "nelson-integration"];
+  const skills = ["helm", "project-tracker", "sprint", "story", "epic", "debt", "backlog", "review", "nelson-integration"];
   const installed: string[] = [];
   const skipped: string[] = [];
   for (const name of skills) {

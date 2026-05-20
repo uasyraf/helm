@@ -162,7 +162,7 @@ function runHelp(): void {
       "                                  [--remote URL --token T] hit a remote helm-server admin endpoint",
       "  helm import --in file         restore from an export (locally, or via --remote URL --token T)",
       "  helm install-hooks            wire SessionStart + PostToolUse into ~/.claude/settings.json",
-      "  helm install-skills           symlink bundled skills/* (project-tracker + 7 slash commands) into ~/.claude/skills/",
+      "  helm install-skills           symlink bundled skills/* (helm + project-tracker + 7 slash commands) into ~/.claude/skills/",
       "  helm help                     show this message",
       "",
     ].join("\n"),

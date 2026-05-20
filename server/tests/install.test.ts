@@ -67,12 +67,12 @@ describe("installSkills", () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it("symlinks all 8 bundled skills if present in package", () => {
+  it("symlinks all 9 bundled skills if present in package", () => {
     const target = join(dir, "claude-skills");
     const result = installSkills(target);
     // installed depends on whether the bundled skills/ dir is reachable from the test process.
-    // Either way: total candidates is 8 and skipped + installed should sum to <= 8.
-    expect(result.installed.length + result.skipped.length).toBeLessThanOrEqual(8);
+    // Either way: total candidates is 9 and skipped + installed should sum to <= 9.
+    expect(result.installed.length + result.skipped.length).toBeLessThanOrEqual(9);
     for (const name of result.installed) {
       expect(existsSync(join(target, name))).toBe(true);
     }
