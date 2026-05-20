@@ -6,6 +6,7 @@ import {
   epic,
   progressEvent,
   project,
+  projectMember,
   sprint,
   story,
   task,
@@ -13,6 +14,7 @@ import {
 } from "./schema.js";
 import type {
   Project,
+  ProjectMember,
   Developer,
   Sprint,
   Epic,
@@ -35,6 +37,20 @@ export function makeSqliteRepo(db: Db): HelmRepo {
     },
     async insertProject(row) {
       await db.insert(project).values(row);
+    },
+    async insertProjectMember(row) {
+      await db.insert(projectMember).values(row);
+    },
+    async findProjectMember(projectId, userSub) {
+      const rows = await db
+        .select()
+        .from(projectMember)
+        .where(and(eq(projectMember.projectId, projectId), eq(projectMember.userSub, userSub)))
+        .limit(1);
+      return rows[0] ?? null;
+    },
+    async findProjectMembersByUserSub(userSub) {
+      return db.select().from(projectMember).where(eq(projectMember.userSub, userSub));
     },
 
     async findDeveloperByHandle(projectId, handle) {

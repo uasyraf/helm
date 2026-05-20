@@ -1,4 +1,4 @@
-import type { Project, Developer, Sprint, Epic, Story, Task, TechDebt, Decision, ProgressEvent } from "./schema.js";
+import type { Project, ProjectMember, Developer, Sprint, Epic, Story, Task, TechDebt, Decision, ProgressEvent } from "./schema.js";
 
 export type EpicUpdate = Partial<Pick<Epic, "title" | "description" | "priority" | "status" | "targetSprintId">>;
 export type StoryUpdate = Partial<Pick<Story, "title" | "description" | "acceptance" | "status" | "size" | "assigneeId" | "priority" | "epicId" | "sprintId" | "startedAt" | "completedAt">>;
@@ -11,6 +11,9 @@ export interface HelmRepo {
   findProjectBySlug(slug: string): Promise<Project | null>;
   findAllProjects(): Promise<Project[]>;
   insertProject(project: Project): Promise<void>;
+  insertProjectMember(row: ProjectMember): Promise<void>;
+  findProjectMember(projectId: string, userSub: string): Promise<ProjectMember | null>;
+  findProjectMembersByUserSub(userSub: string): Promise<ProjectMember[]>;
 
   // developer
   findDeveloperByHandle(projectId: string, handle: string): Promise<Developer | null>;

@@ -19,7 +19,9 @@ export type EventKind =
   | "decision.recorded"
   | "mission.linked"
   | "mission.logged"
-  | "progress.logged";
+  | "progress.logged"
+  | "project.created"
+  | "project.joined";
 
 export interface EmitArgs {
   projectId: string;

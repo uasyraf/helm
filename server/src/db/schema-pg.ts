@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, primaryKey, index } from "drizzle-orm/pg-core";
 
 export const project = pgTable("project", {
   id: text("id").primaryKey(),
@@ -9,8 +9,23 @@ export const project = pgTable("project", {
   sprintLengthDays: integer("sprint_length_days").notNull().default(14),
   wipEnabled: boolean("wip_enabled").notNull().default(false),
   estimationEnabled: boolean("estimation_enabled").notNull().default(true),
+  openJoin: boolean("open_join").notNull().default(false),
   createdAt: text("created_at").notNull(),
 });
+
+export const projectMember = pgTable(
+  "project_member",
+  {
+    projectId: text("project_id").notNull().references(() => project.id),
+    userSub: text("user_sub").notNull(),
+    role: text("role").$type<"owner" | "member">().notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.projectId, t.userSub] }),
+    userSubIdx: index("idx_project_member_user_sub").on(t.userSub),
+  }),
+);
 
 export const developer = pgTable("developer", {
   id: text("id").primaryKey(),
@@ -113,6 +128,7 @@ export const schemaMeta = pgTable("schema_meta", {
 
 export const schema = {
   project,
+  projectMember,
   developer,
   sprint,
   epic,
@@ -122,3 +138,9 @@ export const schema = {
   decision,
   progressEvent,
 };
+
+type ProjectRow = typeof project.$inferSelect;
+// openJoin defaults to false at the DB layer; mark it optional in the TS type so
+// existing Project literals (constructed before the column existed) keep compiling.
+export type Project = Omit<ProjectRow, "openJoin"> & { openJoin?: boolean };
+export type ProjectMember = typeof projectMember.$inferSelect;

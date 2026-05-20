@@ -1,6 +1,7 @@
 import type { HelmRepo, StatusCounts } from "$helm/db/repo.js";
 import type {
   Project,
+  ProjectMember,
   Developer,
   Sprint,
   Epic,
@@ -13,6 +14,25 @@ import type {
 interface RemoteRepoOpts {
   baseUrl: string;
   token?: string;
+}
+
+export interface JoinResult {
+  slug: string;
+  role: "owner" | "member";
+  alreadyMember: boolean;
+}
+
+export interface RemoteCapabilities {
+  joinProject(slug: string): Promise<JoinResult>;
+}
+
+export type RemoteHelmRepo = HelmRepo & RemoteCapabilities;
+
+export class RemoteHttpError extends Error {
+  constructor(message: string, public readonly status: number, public readonly code: string) {
+    super(message);
+    this.name = "RemoteHttpError";
+  }
 }
 
 // Cache id → slug since the REST surface is slug-keyed but the HelmRepo
@@ -29,7 +49,7 @@ class SlugCache {
   }
 }
 
-export function makeRemoteHelmRepo(opts: RemoteRepoOpts): HelmRepo {
+export function makeRemoteHelmRepo(opts: RemoteRepoOpts): RemoteHelmRepo {
   const baseUrl = opts.baseUrl.endsWith("/") ? opts.baseUrl.slice(0, -1) : opts.baseUrl;
   const cache = new SlugCache();
 
@@ -38,10 +58,42 @@ export function makeRemoteHelmRepo(opts: RemoteRepoOpts): HelmRepo {
     ...(opts.token ? { authorization: `Bearer ${opts.token}` } : {}),
   };
 
+  const writeHeaders: HeadersInit = {
+    ...headers,
+    "content-type": "application/json",
+  };
+
   async function get<T>(path: string): Promise<T> {
     const res = await fetch(`${baseUrl}${path}`, { headers });
     if (!res.ok) throw new Error(`helm GET ${path} → ${res.status}`);
     return (await res.json()) as T;
+  }
+
+  // Surface HTTP status + body on remote write failures so SvelteKit form
+  // actions can translate them into user-facing inline errors (401/403/409/...).
+  async function postJson<T>(path: string, body: unknown): Promise<{ status: number; body: T }> {
+    const res = await fetch(`${baseUrl}${path}`, {
+      method: "POST",
+      headers: writeHeaders,
+      body: JSON.stringify(body ?? {}),
+    });
+    const text = await res.text();
+    let parsed: unknown = null;
+    if (text.length > 0) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = { error: { code: "BAD_RESPONSE", message: text.slice(0, 200) } };
+      }
+    }
+    if (!res.ok) {
+      const err = parsed as { error?: { code?: string; message?: string } } | null;
+      const code = err?.error?.code ?? `HTTP_${res.status}`;
+      const message = err?.error?.message ?? `helm POST ${path} → ${res.status}`;
+      const e = new RemoteHttpError(message, res.status, code);
+      throw e;
+    }
+    return { status: res.status, body: parsed as T };
   }
 
   async function getOptional<T>(path: string): Promise<T | null> {
@@ -76,7 +128,31 @@ export function makeRemoteHelmRepo(opts: RemoteRepoOpts): HelmRepo {
       for (const p of r.projects) cache.remember(p);
       return r.projects;
     },
-    async insertProject() { writeUnsupported("insertProject"); },
+    async insertProject(project) {
+      // Remote `POST /v1/projects` takes only the user-supplied fields and the
+      // server fills id/createdAt/openJoin/etc. The HelmRepo signature is
+      // id-keyed (callers in local mode build the full row), so accept it but
+      // only forward the bits the REST contract knows about.
+      const { body } = await postJson<Project>("/v1/projects", {
+        slug: project.slug,
+        name: project.name,
+        gitRemote: project.gitRemote ?? undefined,
+        sprintLengthDays: project.sprintLengthDays,
+      });
+      cache.remember(body);
+    },
+    async insertProjectMember() {
+      // Membership is provisioned server-side by POST /v1/projects (owner) and
+      // POST /v1/projects/:slug/join (member). The dashboard never inserts
+      // membership rows directly against a remote helm.
+      writeUnsupported("insertProjectMember");
+    },
+    async findProjectMember(): Promise<ProjectMember | null> {
+      // The REST surface doesn't expose a per-(project,user) membership lookup;
+      // 403 from /join is the source of truth. Return null so callers fall back.
+      return null;
+    },
+    async findProjectMembersByUserSub(): Promise<ProjectMember[]> { return []; },
 
     async findDeveloperByHandle(): Promise<Developer | null> { return null; },
     async insertDeveloper() { writeUnsupported("insertDeveloper"); },
@@ -235,5 +311,19 @@ export function makeRemoteHelmRepo(opts: RemoteRepoOpts): HelmRepo {
       const events = await this.findRecentEvents(projectId, limit * 10);
       return events.filter((e) => e.developerId === developerId).slice(0, limit);
     },
-  } satisfies HelmRepo;
+
+    async joinProject(slug: string): Promise<JoinResult> {
+      const { status, body } = await postJson<{ slug: string; role: "owner" | "member"; alreadyMember: boolean }>(
+        `/v1/projects/${slug}/join`,
+        {},
+      );
+      // Server returns 200 for already-member, 201 for fresh; trust the body
+      // but defensively re-derive `alreadyMember` from status if missing.
+      return {
+        slug: body.slug ?? slug,
+        role: body.role ?? "member",
+        alreadyMember: body.alreadyMember ?? status === 200,
+      };
+    },
+  } satisfies RemoteHelmRepo;
 }

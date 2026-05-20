@@ -7,6 +7,7 @@ import {
   epic,
   progressEvent,
   project,
+  projectMember,
   sprint,
   story,
   task,
@@ -14,6 +15,7 @@ import {
 } from "./schema-pg.js";
 import type {
   Project,
+  ProjectMember,
   Developer,
   Sprint,
   Epic,
@@ -43,6 +45,24 @@ export function makePgRepo(db: PgDb): HelmRepo {
     },
     async insertProject(row) {
       await pg.insert(project).values(row);
+    },
+    async insertProjectMember(row) {
+      await pg.insert(projectMember).values(row);
+    },
+    async findProjectMember(projectId, userSub) {
+      const rows = await pg
+        .select()
+        .from(projectMember)
+        .where(and(eq(projectMember.projectId, projectId), eq(projectMember.userSub, userSub)))
+        .limit(1);
+      return (rows[0] as ProjectMember | undefined) ?? null;
+    },
+    async findProjectMembersByUserSub(userSub) {
+      const rows = await pg
+        .select()
+        .from(projectMember)
+        .where(eq(projectMember.userSub, userSub));
+      return rows as ProjectMember[];
     },
 
     async findDeveloperByHandle(projectId, handle) {

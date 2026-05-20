@@ -1,6 +1,6 @@
 # helm — PRD (v0.5)
 
-> Status: settled design. All 15 open questions resolved (see § Open Questions). Phases 0 → 4a shipped (v0.2.0 on 2026-05-20); Phase 4b (managed instances, marketplace) deferred pending external-adoption demand.
+> Status: settled design. All 16 open questions resolved (see § Open Questions). Phases 0 → 4a shipped (v0.2.0 on 2026-05-20); Phase 4b (managed instances, marketplace) deferred pending external-adoption demand. Friendly project provisioning (claim ∪ membership union) added 2026-05-20.
 
 > **v0.5 changes (2026-05-20)**: Phase 4a shipped — REST `/v1/*` (hono) co-located with `/mcp` in a single process, OIDC JWT auth (jose + JWKS), RFC 9728 protected-resource discovery for Claude Code's native `/mcp` OAuth flow, multi-tenant runtime (`set_active_project` per MCP session, `POST /v1/projects` admin provisioning), `helm export/import` + `/v1/admin/{export,import}` for backup/migration, distroless container image (~225 MB, port 8080), dashboard `HELM_URL` remote mode. Architecture trade-offs recorded in [DECISIONS.md](../DECISIONS.md); infra contract in [HANDOFF.md](../HANDOFF.md). Phase 4 split into 4a (shipped) and 4b (deferred).
 
@@ -195,16 +195,16 @@ Coexist by picking different worker ports (`37800 + uid % 100` vs claude-mem's `
 | Storage | libSQL (Turso) default, Postgres optional | Embedded replicas = microsecond reads + optional sync; Drizzle abstracts both; Repository pattern (`HelmRepo` + `SqliteHelmRepo` / `PgHelmRepo`) |
 | ORM | Drizzle | Single schema → libSQL + Postgres; shared with dashboard |
 | Dashboard | SvelteKit + Node adapter; direct Drizzle for solo, `RemoteHelmRepo` over REST when `HELM_URL` is set | Solo keeps zero-ceremony local read; team mode runs a dashboard pod that knows only the REST URL |
-| Auth | OIDC JWT (jose + JWKS cache) with per-project authz via `helm_projects` claim; `helm-admin` role bypass for admin endpoints. RFC 9728 `/.well-known/oauth-protected-resource` + `WWW-Authenticate` challenges for Claude Code's native `/mcp` OAuth flow. Static `HELM_API_TOKEN` is a legacy fallback; `HELM_AUTH_DISABLED=1` for local dev only. | OAuth 2.1 in Claude Code removed the previously-feared OIDC friction; one process serves both authenticated REST and authenticated MCP without a separate gateway. |
+| Auth | OIDC JWT (jose + JWKS cache) for **authentication only**; per-project **authorization** is the union of (a) the `helm_projects` JWT claim, (b) helm-owned `project_member` rows, and (c) `helm-admin` role bypass. RFC 9728 `/.well-known/oauth-protected-resource` + `WWW-Authenticate` challenges for Claude Code's native `/mcp` OAuth flow. Static `HELM_API_TOKEN` is a legacy fallback; `HELM_AUTH_DISABLED=1` for local dev only. | Keycloak (or any OIDC issuer) is identity; helm owns authorization. Friendly provisioning means authenticated users can self-serve a tenant without admin intervention. |
 | Tenancy | Stdio/local: one repo = one project (auto-detect). HTTP/OIDC: multi-tenant; MCP sessions start pending, `set_active_project({slug})` binds the session; REST routes scope by `/v1/projects/{slug}/...`. | Server-side cwd is `/app` in container — guessing project from filesystem is wrong; explicit slug from the model or the URL is right. |
 | Container | Multi-stage: `node:22-alpine` builder → `gcr.io/distroless/nodejs22-debian12:nonroot` final. Port 8080. Data volume `/home/nonroot/data`. ~225 MB. | Smallest credible Node base with a non-root default user; logs to stdout for CloudWatch/OTLP collectors. |
 | Worker | Node sidecar process | Hook handlers must return < 1s; async heavy work (debt scanning) |
 
-### Data model (v0.2, 9 tables)
+### Data model (v0.3, 10 tables)
 
 ```sql
 project        (id, slug, name, git_remote, dod?, sprint_length_days,
-                wip_enabled, estimation_enabled, created_at)
+                wip_enabled, estimation_enabled, open_join, created_at)
 developer      (id, project_id, handle, email?, last_seen_at)
 sprint         (id, project_id, name, goal?, started_at, ended_at?, status,
                 wip_limit?)
@@ -218,13 +218,39 @@ tech_debt      (id, project_id, title, description, severity, location,
 decision       (id, project_id, title, context, decision, status, decided_at)
 progress_event (id, project_id, developer_id, sprint_id?, kind, ref_id,
                 summary, ts)
+project_member (project_id, user_sub, role, created_at)
+                -- composite PK (project_id, user_sub)
+                -- role ∈ {'owner', 'member'}
+                -- user_sub = OIDC `sub` claim; helm-owned membership table
+                -- created on POST /v1/projects (creator → owner) and
+                -- POST /v1/projects/:slug/join (joiner → member, on open_join projects)
 ```
+
+`project.open_join` (boolean, default `false` on existing rows; `true` for projects created via `POST /v1/projects` in v0.3+) controls whether authenticated users may self-join via `POST /v1/projects/:slug/join`. `project_member` is the helm-owned authorization table; see § Auth.
 
 Conventions (per project CLAUDE.md):
 
 - Response schemas at API boundaries — never expose ORM models directly
-- Bounded contexts: Sprint/Epic/Story/Task is the "Planning" context; TechDebt is the "Quality" context; Decision is the "Architecture" context; ProgressEvent is the "Audit" context
+- Bounded contexts: Sprint/Epic/Story/Task is the "Planning" context; TechDebt is the "Quality" context; Decision is the "Architecture" context; ProgressEvent is the "Audit" context; ProjectMember is the "Membership" context (gates Planning access)
 - Constructor DI throughout, no service locators
+
+### Auth (identity vs authorization)
+
+**Authentication** is delegated to the OIDC issuer (Keycloak in the reference deployment). The JWT's `sub` claim is the stable user identifier; `email`, `preferred_username`, and `name` populate `developer` rows on first authenticated write.
+
+**Authorization** is owned by helm and resolves per-project access as a **union of three sources** (any one grants access):
+
+1. **`helm-admin` role** (JWT `realm_access.roles`) — full-tenant bypass; can `set_active_project` any slug and reach `/v1/admin/*`.
+2. **`helm_projects` JWT claim** (array of slugs) — preserved as an optional fast-path for enterprise IdP-managed bulk provisioning (e.g. SCIM-fed Keycloak attribute mappers). No longer the sole source of truth.
+3. **`project_member` DB row** (helm-owned, 10th table) — created when the user calls `POST /v1/projects` (creator → `owner`) or `POST /v1/projects/:slug/join` on a project with `open_join: true` (joiner → `member`).
+
+The union is computed on every authorization decision (per-request, per `set_active_project`, per REST scoped route). This means an authenticated user can:
+
+- Create a tenant they own (no admin gate, no claim required) — `POST /v1/projects` is now an authenticated endpoint, not admin-only.
+- Join a tenant marked `open_join: true` — `POST /v1/projects/:slug/join` registers them as a member.
+- Be granted access via an IdP attribute mapper that pushes a slug into the `helm_projects` claim — useful for orgs that provision team membership upstream.
+
+`POST /v1/projects` always seeds a `project_member` row with `role='owner'` for the creator. Newly-created projects default to `open_join: true` (friendly defaults); operators can flip the flag to lock a tenant down.
 
 ### MCP tool surface (v0.3, 24 tools)
 
@@ -243,9 +269,16 @@ Conventions (per project CLAUDE.md):
 | `who_did_what` | Developer activity query |
 | `sprint_review` | Sprint summary: completed stories, velocity, debt delta |
 | `set_active_project` | (HTTP/OIDC) Bind the MCP session to a project slug. Required first call before any other tool on remote sessions. Stdio sessions skip this. |
-| `list_accessible_projects` | (HTTP/OIDC) Returns the projects available to the caller based on the `helm_projects` JWT claim (or all projects when the caller has `helm-admin`). |
+| `list_accessible_projects` | (HTTP/OIDC) Returns the projects available to the caller based on the union of `helm_projects` claim, `project_member` rows, and `helm-admin` role. |
 
 All response schemas are explicit DTOs. Tools other than `set_active_project` and `list_accessible_projects` return `{ error: { code: "NO_ACTIVE_PROJECT" } }` on remote sessions until a slug is bound.
+
+`set_active_project` outcomes:
+
+- **Success** — `{ ok: true, project: { slug, name, ... } }` when the caller is authorized (claim ∪ membership ∪ admin).
+- **`NOT_FOUND`** — `{ error: { code: "NOT_FOUND" } }` when the slug doesn't exist.
+- **`FORBIDDEN`** — `{ error: { code: "FORBIDDEN" } }` when the project exists, the caller is not yet authorized, and `open_join` is `false`.
+- **`JOIN_REQUIRED`** *(v0.3+)* — `{ error: { code: "JOIN_REQUIRED", message, joinable: { slug, name, open_join: true } } }` when the project exists, `open_join` is `true`, and the caller isn't yet a member. The client (Claude Code, dashboard) can prompt the user to call `POST /v1/projects/:slug/join`, then retry.
 
 ## Integration Surface
 
@@ -394,6 +427,7 @@ Re-evaluation cadence: **every 6 months** (next: Nov 2026).
 13. ~~**npm scope** — `@x/` is placeholder. Options: personal scope (`@<handle>/tracker-mcp`), product scope (`@tracker-mcp/server`), unscoped (`tracker-mcp`). Decide before first publish.~~ **Resolved 2026-05-18: `@uasyraf/helm` (personal scope).** Revisit if/when a product org is created.
 14. ~~**Monorepo support** — first-class subdir projects (multiple `.helm/project.json` files inside one git root) or repo-as-single-project? Default proposed: repo-as-project + optional `.helm/project.json` override at any cwd ancestor. Confirm before schema lands.~~ **Resolved 2026-05-18: repo-as-project + `.helm/project.json` override at any cwd ancestor (nearest wins).** Implemented in F1 detect.ts. First-class subdir projects deferred until a real monorepo asks for it.
 15. ~~**No-git environment** — slug auto-name from cwd, refuse-and-prompt, or interactive `init` flow? Default proposed in F1: auto-name + warn, with `init --slug <name>` for explicit override.~~ **Resolved 2026-05-18: auto-name from cwd basename + one-line warning.** `init --slug <name>` override path advertised in the warning. Implemented in F1 detect.ts.
+16. ~~**Per-project access provisioning (hosted mode)** — how do authenticated users get into a project? Pure `helm_projects` claim (admin/IdP-managed) or self-service?~~ **Resolved: 2026-05-20** — Claim ∪ membership union; users self-serve via `POST /v1/projects` (becomes owner) and `POST /v1/projects/:slug/join` (on `open_join` projects). `helm_projects` claim retained as IdP-managed fast-path. See § Architecture > Auth.
 
 ## Verification (how we know it works end-to-end)
 

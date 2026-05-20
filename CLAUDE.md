@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Phases 0 through 3 shipped 2026-05-18/19; Phase 4a (production-ready hosted surface) shipped 2026-05-20 (v0.2.0). The codebase has: 24-tool MCP server (22 entity tools + `set_active_project` / `list_accessible_projects`) exposed over stdio and HTTP, REST `/v1/*` API alongside `/mcp` in a single process (hono), OIDC JWT auth via `jose` with JWKS cache and per-project authorization from the `helm_projects` claim, RFC 9728 `/.well-known/oauth-protected-resource` for Claude Code's native `/mcp` OAuth flow, multi-tenant (one helm hosts many projects), Turso embedded-replica sync, BYOS Postgres via a Repository pattern (`HelmRepo` interface with `SqliteHelmRepo` + `PgHelmRepo`), `POST /v1/admin/{export,import}` + `helm export/import` CLI for backup/migration, distroless container (~225 MB, port 8080, `/home/nonroot/data` volume), PostToolUse debt scanner sidecar, SvelteKit dashboard with `HELM_URL` remote mode, 7 slash command skills + Nelson integration addendum, statusline. 82 unit + integration + e2e tests passing.
+Phases 0 through 3 shipped 2026-05-18/19; Phase 4a (production-ready hosted surface) shipped 2026-05-20 (v0.2.0). The codebase has: 24-tool MCP server (22 entity tools + `set_active_project` / `list_accessible_projects`) exposed over stdio and HTTP, REST `/v1/*` API alongside `/mcp` in a single process (hono), OIDC JWT auth via `jose` with JWKS cache and per-project authorization from the `helm_projects` claim, RFC 9728 `/.well-known/oauth-protected-resource` for Claude Code's native `/mcp` OAuth flow, multi-tenant (one helm hosts many projects), Turso embedded-replica sync, BYOS Postgres via a Repository pattern (`HelmRepo` interface with `SqliteHelmRepo` + `PgHelmRepo`), `POST /v1/admin/{export,import}` + `helm export/import` CLI for backup/migration, distroless container (~225 MB, port 8080, `/home/nonroot/data` volume), PostToolUse debt scanner sidecar, SvelteKit dashboard with `HELM_URL` remote mode, 7 slash command skills + Nelson integration addendum, statusline. 82 unit + integration + e2e tests passing. **Friendly project provisioning (2026-05-20)**: per-project authorization is now the union of `helm_projects` claim, the helm-owned `project_member` table (10th table), and `helm-admin` role; authenticated users self-provision via `POST /v1/projects` (becomes owner) and `POST /v1/projects/:slug/join` on `open_join` projects.
 
 The product is **self-hosted on its own data** — open `helm dashboard` and the killer metric is live. `npm publish --dry-run` produces a clean tarball; ready to publish when the user is.
 
@@ -33,7 +33,7 @@ These are **decided** in PRD v0.3 and should not be revisited without explicit u
 | ORM | Drizzle — single schema targets libSQL + Postgres, shared with dashboard |
 | Dashboard | SvelteKit + Drizzle (Node adapter), reads the same DB the MCP server writes — no tRPC layer |
 | Worker | Bun or Node sidecar for `PostToolUse(Edit|Write)` async work; hook handlers return < 1s |
-| Auth | OIDC JWT (jose + JWKS) with per-project authz via `helm_projects` claim and `helm-admin` role bypass; RFC 9728 discovery for Claude Code's `/mcp` OAuth flow. `HELM_API_TOKEN` static bearer is a legacy fallback (no OIDC); `HELM_AUTH_DISABLED=1` for local dev only. |
+| Auth | OIDC JWT (jose + JWKS) with per-project authz via `helm_projects` claim and `helm-admin` role bypass; RFC 9728 discovery for Claude Code's `/mcp` OAuth flow. `HELM_API_TOKEN` static bearer is a legacy fallback (no OIDC); `HELM_AUTH_DISABLED=1` for local dev only. Per-project authorization is the union of (a) the JWT `helm_projects` claim, (b) the helm-owned `project_member` table (10th table), and (c) `helm-admin` role bypass. Authenticated users self-provision via `POST /v1/projects` (becomes owner) and `POST /v1/projects/:slug/join` on `open_join` projects. The claim is preserved as an optional fast-path for IdP-managed bulk provisioning. |
 | Local data | SQLite file at `~/.tracker/<project-slug>.db` |
 | Team config | `.tracker/config.json` committed to the repo |
 | Agile model | **Scrumban-lite** — Epic → Story → Task, sprints (default 14d), optional WIP, optional t-shirt sizing |
@@ -41,13 +41,14 @@ These are **decided** in PRD v0.3 and should not be revisited without explicit u
 
 ## Data model anchors
 
-9 tables defined in PRD § Architecture > Data model: `project`, `developer`, `sprint`, `epic`, `story`, `task`, `tech_debt`, `decision`, `progress_event`. The `progress_event` table is **append-only** and is the timeline spine + audit trail. Sync conflict semantics: append-only events are conflict-free; mutable rows are last-write-wins for v1 (open question, PRD § Open Questions item 7).
+10 tables defined in PRD § Architecture > Data model: `project`, `developer`, `sprint`, `epic`, `story`, `task`, `tech_debt`, `decision`, `progress_event`, `project_member`. The `progress_event` table is **append-only** and is the timeline spine + audit trail. The `project_member` table (composite PK `(project_id, user_sub)`, role ∈ `{owner, member}`) is helm-owned authorization; combined with `project.open_join` (boolean) it underpins the friendly-provisioning union model. Sync conflict semantics: append-only events are conflict-free; mutable rows are last-write-wins for v1 (open question, PRD § Open Questions item 7).
 
 Bounded contexts:
 - **Planning** — sprint, epic, story, task
 - **Quality** — tech_debt
 - **Architecture** — decision (ADR-lite)
 - **Audit** — progress_event
+- **Membership** — project_member (gates Planning access in hosted mode)
 
 ## Integration surface (the four touchpoints)
 

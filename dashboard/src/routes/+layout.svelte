@@ -26,6 +26,10 @@
 <div class="layout">
   <header class="nav">
     <a href="/" class="brand" style="text-decoration: none; color: inherit;">helm</a>
+    <nav>
+      <a href="/create" class:active={page.url.pathname === "/create"}>Create</a>
+      <a href="/join" class:active={page.url.pathname === "/join"}>Join</a>
+    </nav>
     {#if data.projects.length > 0}
       <select class="mono" onchange={onSwitch} value={currentSlug}>
         <option value="">— pick a project —</option>

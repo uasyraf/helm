@@ -10,6 +10,7 @@ const STATEMENTS: readonly string[] = [
     sprint_length_days INTEGER NOT NULL DEFAULT 14,
     wip_enabled INTEGER NOT NULL DEFAULT 0,
     estimation_enabled INTEGER NOT NULL DEFAULT 1,
+    open_join INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS developer (
@@ -102,6 +103,14 @@ const STATEMENTS: readonly string[] = [
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS project_member (
+    project_id TEXT NOT NULL REFERENCES project(id),
+    user_sub TEXT NOT NULL,
+    role TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (project_id, user_sub)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_project_member_user_sub ON project_member(user_sub)`,
   `CREATE INDEX IF NOT EXISTS idx_progress_event_ts ON progress_event(ts DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_progress_event_project_ts ON progress_event(project_id, ts DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_developer_oidc ON developer(project_id, oidc_sub)`,
@@ -134,7 +143,7 @@ async function ensureColumn(client: Client, table: string, column: string, decl:
   await client.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
 }
 
-export const SCHEMA_VERSION = "2";
+export const SCHEMA_VERSION = "3";
 
 async function stampSchemaVersion(client: Client): Promise<void> {
   await client.execute({
@@ -150,7 +159,9 @@ export async function bootstrap(client: Client): Promise<void> {
   await ensureStoryProjectColumn(client);
   await ensureColumn(client, "developer", "oidc_sub", "TEXT");
   await ensureColumn(client, "progress_event", "user_sub", "TEXT");
+  await ensureColumn(client, "project", "open_join", "INTEGER NOT NULL DEFAULT 0");
   await client.execute("CREATE INDEX IF NOT EXISTS idx_developer_oidc ON developer(project_id, oidc_sub)");
   await client.execute("CREATE INDEX IF NOT EXISTS idx_progress_event_project_ts ON progress_event(project_id, ts DESC)");
+  await client.execute("CREATE INDEX IF NOT EXISTS idx_project_member_user_sub ON project_member(user_sub)");
   await stampSchemaVersion(client);
 }

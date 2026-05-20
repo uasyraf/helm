@@ -12,6 +12,7 @@ const STATEMENTS: readonly string[] = [
     sprint_length_days INTEGER NOT NULL DEFAULT 14,
     wip_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     estimation_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    open_join BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS developer (
@@ -104,6 +105,14 @@ const STATEMENTS: readonly string[] = [
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS project_member (
+    project_id TEXT NOT NULL REFERENCES project(id),
+    user_sub TEXT NOT NULL,
+    role TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (project_id, user_sub)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_project_member_user_sub ON project_member(user_sub)`,
   `CREATE INDEX IF NOT EXISTS idx_progress_event_ts ON progress_event(ts DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_progress_event_project_ts ON progress_event(project_id, ts DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_developer_oidc ON developer(project_id, oidc_sub)`,
@@ -123,12 +132,21 @@ const MIGRATIONS: readonly string[] = [
    WHERE project_id IS NULL`,
   `ALTER TABLE developer ADD COLUMN IF NOT EXISTS oidc_sub TEXT`,
   `ALTER TABLE progress_event ADD COLUMN IF NOT EXISTS user_sub TEXT`,
+  `ALTER TABLE project ADD COLUMN IF NOT EXISTS open_join BOOLEAN NOT NULL DEFAULT FALSE`,
   `CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS project_member (
+    project_id TEXT NOT NULL REFERENCES project(id),
+    user_sub TEXT NOT NULL,
+    role TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (project_id, user_sub)
+  )`,
   `CREATE INDEX IF NOT EXISTS idx_developer_oidc ON developer(project_id, oidc_sub)`,
   `CREATE INDEX IF NOT EXISTS idx_progress_event_project_ts ON progress_event(project_id, ts DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_project_member_user_sub ON project_member(user_sub)`,
 ];
 
-export const SCHEMA_VERSION_PG = "2";
+export const SCHEMA_VERSION_PG = "3";
 
 export async function bootstrapPg(runner: PgQueryRunner): Promise<void> {
   for (const sql of STATEMENTS) {

@@ -38,9 +38,28 @@ describe("schema additive: developer.oidc_sub + progress_event.user_sub + schema
     rmSync(home, { recursive: true, force: true });
   });
 
-  it("schema_meta stamps version=2 on bootstrap", async () => {
+  it("schema_meta stamps version=3 on bootstrap", async () => {
     const row = await handle.client.execute("SELECT value FROM schema_meta WHERE key = 'version'");
-    expect(row.rows[0]!.value).toBe("2");
+    expect(row.rows[0]!.value).toBe("3");
+  });
+
+  it("project.open_join defaults to false and project_member table accepts inserts", async () => {
+    const projectRow = await handle.client.execute({
+      sql: "SELECT open_join FROM project WHERE id = ?",
+      args: [project.id],
+    });
+    expect(projectRow.rows[0]!.open_join).toBe(0);
+
+    await handle.client.execute({
+      sql: "INSERT INTO project_member(project_id, user_sub, role, created_at) VALUES(?, ?, ?, ?)",
+      args: [project.id, "kc-sub-001", "owner", now()],
+    });
+    const members = await handle.client.execute({
+      sql: "SELECT role FROM project_member WHERE project_id = ? AND user_sub = ?",
+      args: [project.id, "kc-sub-001"],
+    });
+    expect(members.rows).toHaveLength(1);
+    expect(members.rows[0]!.role).toBe("owner");
   });
 
   it("developer table has oidc_sub column", async () => {

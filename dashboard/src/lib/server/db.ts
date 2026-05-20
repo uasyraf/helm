@@ -9,9 +9,10 @@ import { makePgRepo } from "$helm/db/repo-pg.js";
 import { bootstrap } from "$helm/db/bootstrap.js";
 import { bootstrapPg } from "$helm/db/pg-bootstrap.js";
 import type { HelmRepo } from "$helm/db/repo.js";
-import { makeRemoteHelmRepo } from "./remote-repo.js";
+import { makeRemoteHelmRepo, type RemoteHelmRepo } from "./remote-repo.js";
 
 let cached: HelmRepo | null = null;
+let cachedRemote: RemoteHelmRepo | null = null;
 
 function helmHome(): string {
   return process.env.HELM_HOME ?? join(homedir(), ".helm");
@@ -30,7 +31,8 @@ export async function repo(): Promise<HelmRepo> {
 
   const helmUrl = process.env.HELM_URL;
   if (helmUrl) {
-    cached = makeRemoteHelmRepo({ baseUrl: helmUrl, token: process.env.HELM_TOKEN });
+    cachedRemote = makeRemoteHelmRepo({ baseUrl: helmUrl, token: process.env.HELM_TOKEN });
+    cached = cachedRemote;
     return cached;
   }
 
@@ -54,4 +56,22 @@ export async function repo(): Promise<HelmRepo> {
   const drizzled = drizzleLibsql(client, { schema });
   cached = makeSqliteRepo(drizzled);
   return cached;
+}
+
+export function isRemoteMode(): boolean {
+  return Boolean(process.env.HELM_URL);
+}
+
+/**
+ * Resolve the remote-only helm repo for endpoints that need `joinProject` or
+ * other REST-only operations. In local mode there is no remote — callers must
+ * guard with `isRemoteMode()` first.
+ */
+export async function remoteRepo(): Promise<RemoteHelmRepo> {
+  if (!isRemoteMode()) {
+    throw new Error("remoteRepo() called in local mode; guard with isRemoteMode() first");
+  }
+  await repo();
+  if (!cachedRemote) throw new Error("remote repo not initialised");
+  return cachedRemote;
 }

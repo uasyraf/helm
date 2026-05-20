@@ -3,7 +3,11 @@ import { z } from "zod";
 import type { RestEnv } from "./context.js";
 import { httpErrors } from "./errors.js";
 import { newId, now } from "../../util/ids.js";
-import { loadProjectAndActor } from "./project-loader.js";
+import {
+  ensureDeveloperMiddleware,
+  loadProject,
+  requireProjectMembership,
+} from "./project-loader.js";
 import { emitEvent } from "../../events/emit.js";
 import type { EpicUpdate, StoryUpdate, TaskUpdate, SprintUpdate } from "../../db/repo.js";
 
@@ -100,6 +104,30 @@ function parseBody<T>(schema: z.ZodSchema<T>, body: unknown): T {
   return result.data;
 }
 
+// Cross-dialect detection for primary-key / unique constraint violations on
+// `project_member`. libsql/better-sqlite3 surface the SQLite extended error
+// code as `SQLITE_CONSTRAINT_PRIMARYKEY` (or the generic `SQLITE_CONSTRAINT`
+// on older drivers); node-postgres uses SQLSTATE `23505`. We match by string
+// content rather than driver-specific instanceof so this works against both
+// SqliteHelmRepo and PgHelmRepo without importing either driver.
+function isUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { code?: unknown; message?: unknown };
+  if (typeof e.code === "string") {
+    if (e.code === "23505") return true;
+    if (e.code === "SQLITE_CONSTRAINT_PRIMARYKEY") return true;
+    if (e.code === "SQLITE_CONSTRAINT_UNIQUE") return true;
+    if (e.code === "SQLITE_CONSTRAINT") return true;
+  }
+  if (typeof e.message === "string") {
+    const m = e.message.toUpperCase();
+    if (m.includes("UNIQUE CONSTRAINT")) return true;
+    if (m.includes("PRIMARY KEY")) return true;
+    if (m.includes("DUPLICATE KEY")) return true;
+  }
+  return false;
+}
+
 export function buildProjectRoutes(): Hono<RestEnv> {
   const app = new Hono<RestEnv>();
 
@@ -112,8 +140,32 @@ export function buildProjectRoutes(): Hono<RestEnv> {
     return c.json({ projects: visible.map((p) => ({ slug: p.slug, name: p.name, createdAt: p.createdAt })) });
   });
 
+  // Reserved slugs that collide with helm's routing surface or read like
+  // platform-owned namespaces. Operator-configurable denylist is deferred to a
+  // follow-up story (per F5-min in the T3+T4 red-cell review).
+  const RESERVED_SLUGS = new Set([
+    "admin",
+    "api",
+    "v1",
+    "mcp",
+    "helm",
+    "well-known",
+    ".",
+    "..",
+  ]);
+
   const ProjectCreateSchema = z.object({
-    slug: z.string().regex(/^[a-z0-9._-]+$/),
+    slug: z
+      .string()
+      .min(3, "slug must be at least 3 characters")
+      .max(64, "slug must be at most 64 characters")
+      .regex(/^[a-z0-9._-]+$/, "slug may only contain lowercase letters, digits, '.', '_', '-'")
+      .refine((s) => /[a-z0-9]/.test(s), {
+        message: "slug must contain at least one alphanumeric character",
+      })
+      .refine((s) => !RESERVED_SLUGS.has(s), {
+        message: "slug is reserved and cannot be used",
+      }),
     name: z.string().min(1).optional(),
     gitRemote: z.string().optional(),
     sprintLengthDays: z.number().int().positive().optional(),
@@ -121,11 +173,15 @@ export function buildProjectRoutes(): Hono<RestEnv> {
 
   app.post("/", async (c) => {
     const actor = c.get("actor");
-    if (!actor.isAdmin) throw httpErrors.forbidden("admin role required to create projects");
+    // Defense in depth: friendly provisioning lets any authenticated user create a
+    // project, but we still need a stable identity to own it. Missing userSub
+    // would corrupt the membership table, so refuse early.
+    if (!actor.userSub) throw httpErrors.unauthorized("authenticated identity required");
     const body = parseBody(ProjectCreateSchema, await c.req.json().catch(() => ({})));
     const repo = c.get("repo");
     const existing = await repo.findProjectBySlug(body.slug);
     if (existing) throw httpErrors.conflict(`project '${body.slug}' already exists`);
+    const createdAt = now();
     const row = {
       id: newId(),
       slug: body.slug,
@@ -135,14 +191,92 @@ export function buildProjectRoutes(): Hono<RestEnv> {
       sprintLengthDays: body.sprintLengthDays ?? 14,
       wipEnabled: false,
       estimationEnabled: true,
-      createdAt: now(),
+      openJoin: true,
+      createdAt,
     };
     await repo.insertProject(row);
+    await repo.insertProjectMember({
+      projectId: row.id,
+      userSub: actor.userSub,
+      role: "owner",
+      createdAt,
+    });
+    // Audit trail: friendly provisioning means any authenticated user can
+    // create a project, so the timeline needs to record who provisioned what.
+    // developerId is null — the creator's per-project developer row doesn't
+    // exist yet (it materializes on first scoped-route access).
+    await emitEvent(repo, {
+      projectId: row.id,
+      developerId: null,
+      sprintId: null,
+      kind: "project.created",
+      refId: row.id,
+      summary: `project '${row.slug}' created`,
+      userSub: actor.userSub,
+    });
     return c.json(row, 201);
   });
 
+  // /join lives OUTSIDE the membership-gated `scoped` sub-app. Non-members are
+  // the entire audience for /join, so the membership middleware would 403 them
+  // before they could ever join. We only resolve the project here; the handler
+  // gates on openJoin and emits its own audit event. We also deliberately do
+  // NOT run ensureDeveloperMiddleware on this path — materializing a developer
+  // row before membership is confirmed is a JWT-controlled handle-squat surface
+  // (F2 of the T3+T4 red-cell review). The developer row will materialize on
+  // the next scoped-route access after /join succeeds.
+  app.post("/:slug/join", loadProject, async (c) => {
+    const project = c.get("project");
+    const actor = c.get("actor");
+    const repo = c.get("repo");
+    if (!actor.userSub) throw httpErrors.unauthorized("authenticated identity required");
+    if (project.openJoin !== true) {
+      throw httpErrors.forbidden(`project '${project.slug}' is not open to join`);
+    }
+    const existing = await repo.findProjectMember(project.id, actor.userSub);
+    if (existing) {
+      return c.json({ slug: project.slug, role: existing.role, alreadyMember: true }, 200);
+    }
+    try {
+      await repo.insertProjectMember({
+        projectId: project.id,
+        userSub: actor.userSub,
+        role: "member",
+        createdAt: now(),
+      });
+    } catch (err) {
+      // TOCTOU: two concurrent /join calls can both pass the findProjectMember
+      // check; the composite PK (project_id, user_sub) rejects the loser at the
+      // DB layer. Treat unique-violation as alreadyMember=true so callers see
+      // the same idempotent shape they'd get from the dedup branch above. Skip
+      // the audit emission — the winning insert already emitted project.joined.
+      if (isUniqueViolation(err)) {
+        const after = await repo.findProjectMember(project.id, actor.userSub);
+        const role = after?.role ?? "member";
+        return c.json({ slug: project.slug, role, alreadyMember: true }, 200);
+      }
+      throw err;
+    }
+    await emitEvent(repo, {
+      projectId: project.id,
+      developerId: null,
+      sprintId: null,
+      kind: "project.joined",
+      refId: project.id,
+      summary: `user joined project '${project.slug}'`,
+      userSub: actor.userSub,
+    });
+    return c.json({ slug: project.slug, role: "member", alreadyMember: false }, 201);
+  });
+
   const scoped = new Hono<RestEnv>();
-  scoped.use("*", loadProjectAndActor);
+  // Three-stage chain replaces the old monolithic loadProjectAndActor: resolve
+  // project → enforce claim ∪ membership → materialize developer row. Order
+  // matters — see ensureDeveloperMiddleware's comment for why developer
+  // creation cannot run before the access gate.
+  scoped.use("*", loadProject);
+  scoped.use("*", requireProjectMembership);
+  scoped.use("*", ensureDeveloperMiddleware);
 
   scoped.get("/", async (c) => c.json(c.get("project")));
 
