@@ -21,3 +21,6 @@ dashboard/node_modules/
 
 # Nelson mission artifacts (kept local; not versioned)
 .nelson/
+
+# Local-only operator deploy script (per-operator, not portable)
+scripts/deploy.sh
